@@ -1045,6 +1045,55 @@ var sqlServerCases = []Tokens{
 	},
 }
 
+// SQLServer w/o AtWord
+var oddball1Cases = []Tokens{
+	{
+		{Type: Word, Text: "od1"},
+		{Type: Whitespace, Text: " "},
+		{Type: Identifier, Text: "@foo$"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "od2"},
+		{Type: Whitespace, Text: " "},
+		{Type: Identifier, Text: "@foo"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "od3"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: "@"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "od4"},
+		{Type: Whitespace, Text: " "},
+		{Type: Identifier, Text: "@8"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "od5"},
+		{Type: Whitespace, Text: " "},
+		{Type: Identifier, Text: "@88"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "od6"},
+		{Type: Whitespace, Text: " "},
+		{Type: Identifier, Text: "@88"},
+	},
+	{
+		{Type: Word, Text: "od7"},
+		{Type: Whitespace, Text: " "},
+		{Type: Identifier, Text: "@8"},
+	},
+	{
+		{Type: Word, Text: "od8"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: "@"},
+	},
+}
+
 func doTests(t *testing.T, config Config, cases ...[]Tokens) {
 	for _, tcl := range cases {
 		for _, tc := range tcl {
@@ -1080,6 +1129,12 @@ func TestOracleTokenizing(t *testing.T) {
 
 func TestSQLServerTokenizing(t *testing.T) {
 	doTests(t, SQLServerConfig(), commonCases, sqlServerCases)
+}
+
+func TestOddbal1Tokenizing(t *testing.T) {
+	c := SQLServerConfig()
+	c.NoticeAtWord = false
+	doTests(t, c, commonCases, oddball1Cases)
 }
 
 func TestStrip(t *testing.T) {

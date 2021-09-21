@@ -509,6 +509,7 @@ Identifier:
 			continue
 		default:
 			if i-tokenStart == 1 {
+				// # @ $ or _
 				token(Punctuation)
 			} else {
 				token(Identifier)
@@ -517,6 +518,7 @@ Identifier:
 		}
 	}
 	if i-tokenStart == 1 {
+		// # @ $ or _
 		token(Punctuation)
 	} else {
 		token(Identifier)
@@ -537,10 +539,12 @@ AtWordStart:
 			if config.NoticeIdentifiers {
 				goto Identifier
 			}
+			// @
 			token(Punctuation)
 			goto BaseState
 		}
 	}
+	// @
 	token(Punctuation)
 	goto Done
 
@@ -582,10 +586,12 @@ PossibleNumber:
 			if unicode.IsDigit(r) {
 				goto NumberNoDot
 			}
+			// .
 			token(Punctuation)
 			goto BaseState
 		}
 	}
+	// .
 	token(Punctuation)
 	goto Done
 
@@ -900,6 +906,7 @@ Dollar:
 				e := strings.Index(s[i+1:], "$$")
 				if e == -1 {
 					i = firstDollarEnd
+					// $
 					token(Punctuation)
 					goto BaseState
 				}
@@ -919,6 +926,7 @@ Dollar:
 						e := strings.Index(s[i:], endToken)
 						if e == -1 {
 							i = firstDollarEnd
+							// $
 							token(Punctuation)
 							goto BaseState
 						}
@@ -930,6 +938,7 @@ Dollar:
 						continue
 					} else {
 						i = firstDollarEnd
+						// $
 						token(Punctuation)
 						goto BaseState
 					}
@@ -954,9 +963,11 @@ Dollar:
 				goto BaseState
 			}
 		}
+		// $
 		token(Punctuation)
 		goto BaseState
 	}
+	// $
 	token(Punctuation)
 	goto Done
 
