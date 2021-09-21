@@ -380,6 +380,11 @@ var commonCases = []Tokens{
 		{Type: Word, Text: "z"},
 		{Type: Literal, Text: "'not a prefixed literal'"},
 	},
+	{
+		{Type: Word, Text: "c54"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "z"},
+	},
 }
 
 var mySQLCases = []Tokens{
@@ -888,6 +893,43 @@ var oracleCases = []Tokens{
 		{Type: Number, Text: "3.7E11F"},
 		{Type: Whitespace, Text: " "},
 	},
+	{
+		{Type: Word, Text: "o15"},
+		{Type: Whitespace, Text: " "},
+		{Type: ColonWord, Text: ":foo"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "o16"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: ":"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "o17"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: ":"},
+		{Type: Number, Text: "3"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "o17"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: "@"},
+		{Type: Word, Text: "foo"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "o16"},
+		{Type: Whitespace, Text: " "},
+		{Type: ColonWord, Text: ":f"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "o17"},
+		{Type: Whitespace, Text: " "},
+		{Type: ColonWord, Text: ":f"},
+	},
 }
 
 var sqlServerCases = []Tokens{
@@ -950,6 +992,56 @@ var sqlServerCases = []Tokens{
 		{Type: Whitespace, Text: " "},
 		{Type: Literal, Text: "N'martha''s family'"},
 		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "s11"},
+		{Type: Whitespace, Text: " "},
+		{Type: AtWord, Text: "@foo"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "s12"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: "@"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "s13"},
+		{Type: Whitespace, Text: " "},
+		{Type: Identifier, Text: "@8"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "s14"},
+		{Type: Whitespace, Text: " "},
+		{Type: Identifier, Text: "@88"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "s15"},
+		{Type: Whitespace, Text: " "},
+		{Type: Identifier, Text: "@foo$b"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "s16"},
+		{Type: Whitespace, Text: " "},
+		{Type: Identifier, Text: "@foo$b"},
+	},
+	{
+		{Type: Word, Text: "s17"},
+		{Type: Whitespace, Text: " "},
+		{Type: Identifier, Text: "@88"},
+	},
+	{
+		{Type: Word, Text: "s18"},
+		{Type: Whitespace, Text: " "},
+		{Type: Identifier, Text: "@8"},
+	},
+	{
+		{Type: Word, Text: "s19"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: "@"},
 	},
 }
 

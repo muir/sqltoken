@@ -18,6 +18,7 @@ const (
 	ColonWord              = "colonWord"    // used in sqlx substitution
 	Literal                = "literal"      // strings
 	Identifier             = "identifier"   // used in SQL Server for many things
+	AtWord                 = "atWord"       // used in SQL Server, subset of Identifier
 	Number                 = "number"
 	Semicolon              = "semicolon"
 	Punctuation            = "punctuation"
@@ -80,6 +81,9 @@ type Config struct {
 	// NoticeMoneyConstants $10 $10.32 (SQL Server)
 	NoticeMoneyConstants bool
 
+	// NoticeAtWord @foo (SQL Server)
+	NoticeAtWord bool
+
 	// NoticeAtIdentifiers _baz @fo$o @@b#ar #foo ##b@ar(SQL Server)
 	NoticeIdentifiers bool
 }
@@ -93,10 +97,10 @@ type TokensList []Tokens
 func OracleConfig() Config {
 	// https://docs.oracle.com/en/database/oracle/oracle-database/19/sqlrf/Literals.html
 	return Config{
-		NoticeNotionalStrings:  true,
+		NoticeNotionalStrings:    true,
 		NoticeDeliminatedStrings: true,
-		NoticeTypedNumbers:     true,
-		NoticeColonWord:        true,
+		NoticeTypedNumbers:       true,
+		NoticeColonWord:          true,
 	}
 }
 
@@ -107,6 +111,7 @@ func SQLServerConfig() Config {
 		NoticeNotionalStrings: true,
 		NoticeHexNumbers:      true,
 		NoticeMoneyConstants:  true,
+		NoticeAtWord:          true,
 		NoticeIdentifiers:     true,
 	}
 }
@@ -213,7 +218,9 @@ BaseState:
 			}
 			token(Punctuation)
 		case '@':
-			if config.NoticeIdentifiers {
+			if config.NoticeAtWord {
+				goto AtWordStart
+			} else if config.NoticeIdentifiers {
 				goto Identifier
 			} else {
 				token(Punctuation)
@@ -230,8 +237,13 @@ BaseState:
 			goto Whitespace
 		case '.':
 			goto PossibleNumber
+		case ':':
+			if config.NoticeColonWord {
+				goto ColonWordStart
+			}
+			token(Punctuation)
 		case '~', '`', '!', '%', '^', '&', '*', '(', ')', '+', '=', '{', '}', '[', ']',
-			'|', '\\', ':', '<', '>', ',':
+			'|', '\\', '<', '>', ',':
 			token(Punctuation)
 		case '$':
 			// $1
@@ -446,6 +458,43 @@ Word:
 	token(Word)
 	goto Done
 
+ColonWordStart:
+	if i < len(s) {
+		c := s[i]
+		switch c {
+		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+			'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+			'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z':
+			i++
+			goto ColonWord
+		default:
+			token(Punctuation)
+			goto BaseState
+		}
+	}
+	token(Punctuation)
+	goto Done
+
+ColonWord:
+	for i < len(s) {
+		c := s[i]
+		switch c {
+		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+			'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+			'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+			'0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+			i++
+			continue
+		default:
+			token(ColonWord)
+			goto BaseState
+		}
+	}
+	token(ColonWord)
+	goto Done
+
 Identifier:
 	for i < len(s) {
 		c := s[i]
@@ -459,11 +508,66 @@ Identifier:
 			i++
 			continue
 		default:
-			token(Identifier)
+			if i-tokenStart == 1 {
+				token(Punctuation)
+			} else {
+				token(Identifier)
+			}
 			goto BaseState
 		}
 	}
-	token(Identifier)
+	if i-tokenStart == 1 {
+		token(Punctuation)
+	} else {
+		token(Identifier)
+	}
+	goto Done
+
+AtWordStart:
+	if i < len(s) {
+		c := s[i]
+		switch c {
+		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+			'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+			'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z':
+			i++
+			goto AtWord
+		default:
+			goto Identifier
+		}
+	}
+	token(Punctuation)
+	goto Done
+
+AtWord:
+	for i < len(s) {
+		c := s[i]
+		switch c {
+		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+			'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+			'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+			'0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+			i++
+			continue
+		case '#', '@', '$', '_':
+			i++
+			goto Identifier
+		default:
+			if i-tokenStart == 1 {
+				token(Punctuation)
+			} else {
+				token(AtWord)
+			}
+			goto BaseState
+		}
+	}
+	if i-tokenStart == 1 {
+		token(Punctuation)
+	} else {
+		token(AtWord)
+	}
 	goto Done
 
 PossibleNumber:
