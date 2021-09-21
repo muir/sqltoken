@@ -12,15 +12,15 @@ type TokenType string
 const (
 	Comment      TokenType = "comment"
 	Whitespace             = "whitespace"
-	QuestionMark           = "questionMark" // used in MySQL substitution
-	AtSign                 = "atSign"       // used in sqlserver substitution
-	DollarNumber           = "dollarNumber" // used in PostgreSQL substitution
-	ColonWord              = "colonWord"    // used in sqlx substitution
-	Literal                = "literal"      // strings
-	Identifier             = "identifier"   // used in SQL Server for many things
-	AtWord                 = "atWord"       // used in SQL Server, subset of Identifier
+	QuestionMark           = "?"          // used in MySQL substitution
+	AtSign                 = "@"          // used in sqlserver substitution
+	DollarNumber           = "$"          // used in PostgreSQL substitution
+	ColonWord              = ":"          // used in sqlx substitution
+	Literal                = "literal"    // strings
+	Identifier             = "identifier" // used in SQL Server for many things
+	AtWord                 = "atWord"     // used in SQL Server, subset of Identifier
 	Number                 = "number"
-	Semicolon              = "semicolon"
+	Semicolon              = ";"
 	Punctuation            = "punctuation"
 	Word                   = "word"
 	Other                  = "other" // control characters and other non-printables
