@@ -1045,88 +1045,41 @@ var sqlServerCases = []Tokens{
 	},
 }
 
-func doTestInner(t *testing.T, tc Tokens, f func(string) Tokens) {
-	text := tc.String()
-	t.Log("---------------------------------------")
-	t.Log(text)
-	t.Log("-----------------")
-	got := f(text)
-	require.Equal(t, text, got.String(), tc.String())
-	require.Equal(t, tc, got, tc.String())
-}
-
-func doTest(t *testing.T, tc Tokens, f func(string) Tokens) {
-	if len(tc) == 0 {
-		t.Run("null", func(t *testing.T) {
-			doTestInner(t, tc, f)
-			return
-		})
-		return
+func doTests(t *testing.T, config Config, cases ...[]Tokens) {
+	for _, tcl := range cases {
+		for _, tc := range tcl {
+			desc := "null"
+			if len(tc) > 0 {
+				desc = tc[0].Text
+			}
+			t.Run(desc, func(t *testing.T) {
+				text := tc.String()
+				t.Log("---------------------------------------")
+				t.Log(text)
+				t.Log("-----------------")
+				got := Tokenize(text, config)
+				require.Equal(t, text, got.String(), tc.String())
+				require.Equal(t, tc, got, tc.String())
+				return
+			})
+		}
 	}
-	t.Run(tc[0].Text, func(t *testing.T) {
-		doTestInner(t, tc, f)
-		return
-	})
-}
-
-func testSQLServer(t *testing.T, tc Tokens) {
-	doTest(t, tc, func(s string) Tokens {
-		return Tokenize(s, SQLServerConfig())
-	})
-}
-
-func testOracleSQL(t *testing.T, tc Tokens) {
-	doTest(t, tc, func(s string) Tokens {
-		return Tokenize(s, OracleConfig())
-	})
-}
-
-func testMySQL(t *testing.T, tc Tokens) {
-	doTest(t, tc, func(s string) Tokens {
-		return TokenizeMySQL(s)
-	})
-}
-
-func testPostgreSQL(t *testing.T, tc Tokens) {
-	doTest(t, tc, func(s string) Tokens {
-		return TokenizePostgreSQL(s)
-	})
 }
 
 func TestMySQLTokenizing(t *testing.T) {
-	for _, tc := range commonCases {
-		testMySQL(t, tc)
-	}
-	for _, tc := range mySQLCases {
-		testMySQL(t, tc)
-	}
+	doTests(t, MySQLConfig(), commonCases, mySQLCases)
 }
 
 func TestPostgresSQLTokenizing(t *testing.T) {
-	for _, tc := range commonCases {
-		testPostgreSQL(t, tc)
-	}
-	for _, tc := range postgreSQLCases {
-		testPostgreSQL(t, tc)
-	}
+	doTests(t, PostgreSQLConfig(), commonCases, postgreSQLCases)
 }
 
 func TestOracleTokenizing(t *testing.T) {
-	for _, tc := range commonCases {
-		testOracleSQL(t, tc)
-	}
-	for _, tc := range oracleCases {
-		testOracleSQL(t, tc)
-	}
+	doTests(t, OracleConfig(), commonCases, oracleCases)
 }
 
 func TestSQLServerTokenizing(t *testing.T) {
-	for _, tc := range commonCases {
-		testSQLServer(t, tc)
-	}
-	for _, tc := range sqlServerCases {
-		testSQLServer(t, tc)
-	}
+	doTests(t, SQLServerConfig(), commonCases, sqlServerCases)
 }
 
 func TestStrip(t *testing.T) {
