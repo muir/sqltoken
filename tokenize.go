@@ -534,7 +534,11 @@ AtWordStart:
 			i++
 			goto AtWord
 		default:
-			goto Identifier
+			if config.NoticeIdentifiers {
+				goto Identifier
+			}
+			token(Punctuation)
+			goto BaseState
 		}
 	}
 	token(Punctuation)
@@ -552,22 +556,17 @@ AtWord:
 			i++
 			continue
 		case '#', '@', '$', '_':
-			i++
-			goto Identifier
-		default:
-			if i-tokenStart == 1 {
-				token(Punctuation)
-			} else {
-				token(AtWord)
+			if config.NoticeIdentifiers {
+				goto Identifier
 			}
+			token(AtWord)
+			goto BaseState
+		default:
+			token(AtWord)
 			goto BaseState
 		}
 	}
-	if i-tokenStart == 1 {
-		token(Punctuation)
-	} else {
-		token(AtWord)
-	}
+	token(AtWord)
 	goto Done
 
 PossibleNumber:
