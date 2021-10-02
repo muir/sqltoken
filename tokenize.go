@@ -7,23 +7,25 @@ import (
 	"unicode/utf8"
 )
 
-type TokenType string
+//go:generate enumer -type=TokenType -json
+
+type TokenType int
 
 const (
-	Comment      TokenType = "comment"
-	Whitespace             = "whitespace"
-	QuestionMark           = "?"          // used in MySQL substitution
-	AtSign                 = "@"          // used in sqlserver substitution
-	DollarNumber           = "$"          // used in PostgreSQL substitution
-	ColonWord              = ":"          // used in sqlx substitution
-	Literal                = "literal"    // strings
-	Identifier             = "identifier" // used in SQL Server for many things
-	AtWord                 = "atWord"     // used in SQL Server, subset of Identifier
-	Number                 = "number"
-	Semicolon              = ";"
-	Punctuation            = "punctuation"
-	Word                   = "word"
-	Other                  = "other" // control characters and other non-printables
+	Comment TokenType = iota
+	Whitespace
+	QuestionMark // used in MySQL substitution
+	AtSign       // used in sqlserver substitution
+	DollarNumber // used in PostgreSQL substitution
+	ColonWord    // used in sqlx substitution
+	Literal      // strings
+	Identifier   // used in SQL Server for many things
+	AtWord       // used in SQL Server, subset of Identifier
+	Number
+	Semicolon
+	Punctuation
+	Word
+	Other // control characters and other non-printables
 )
 
 func combineOkay(t TokenType) bool {
@@ -180,7 +182,7 @@ func Tokenize(s string, config Config) Tokens {
 			return
 		}
 		if len(tokens) > 0 && tokens[len(tokens)-1].Type == t && combineOkay(t) {
-			tokens[len(tokens)-1].Text += s[tokenStart:i]
+			tokens[len(tokens)-1].Text = s[tokenStart-len(tokens[len(tokens)-1].Text) : i]
 		} else {
 			tokens = append(tokens, Token{
 				Type: t,
