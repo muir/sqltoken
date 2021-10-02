@@ -930,6 +930,27 @@ var oracleCases = []Tokens{
 		{Type: Whitespace, Text: " "},
 		{Type: ColonWord, Text: ":f"},
 	},
+	{
+		{Type: Word, Text: "o18"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: "::"},
+		{Type: Word, Text: "foo"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "o19"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: ":::"},
+		{Type: Word, Text: "foo"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "o20"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: "::::"},
+		{Type: Word, Text: "foo"},
+		{Type: Whitespace, Text: " "},
+	},
 }
 
 var sqlServerCases = []Tokens{
@@ -1185,6 +1206,6 @@ func TestCmdSplit(t *testing.T) {
 	}
 	for _, tc := range cases {
 		ts := TokenizeMySQL(tc.input)
-		require.Equal(t, tc.want, ts.CmdSplit().Strings(), tc.input)
+		require.Equalf(t, tc.want, ts.CmdSplit().Strings(), tc.input)
 	}
 }
