@@ -1163,6 +1163,7 @@ var oddball2Cases = []Tokens{
 func doTests(t *testing.T, config Config, cases ...[]Tokens) {
 	for _, tcl := range cases {
 		for _, tc := range tcl {
+			tc := tc
 			desc := "null"
 			if len(tc) > 0 {
 				desc = tc[0].Text

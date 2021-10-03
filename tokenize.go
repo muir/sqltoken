@@ -29,6 +29,7 @@ const (
 )
 
 func combineOkay(t TokenType) bool {
+	// nolint:exhaustive
 	switch t {
 	case Number, QuestionMark, DollarNumber, ColonWord:
 		return false
@@ -1078,6 +1079,7 @@ Dollar:
 			if unicode.IsLetter(r) {
 				i += w
 				for i < len(s) {
+					// nolint:govet
 					c := s[i]
 					r, w := utf8.DecodeRuneInString(s[i:])
 					i++
@@ -1152,6 +1154,7 @@ func (ts Tokens) String() string {
 func (ts Tokens) Strip() Tokens {
 	i := 0
 	for i < len(ts) {
+		// nolint:exhaustive
 		switch ts[i].Type {
 		case Comment, Whitespace, Semicolon:
 			i++
@@ -1162,6 +1165,7 @@ func (ts Tokens) Strip() Tokens {
 	c := make(Tokens, 0, len(ts))
 	var lastReal int
 	for i < len(ts) {
+		// nolint:exhaustive
 		switch ts[i].Type {
 		case Comment:
 			continue
