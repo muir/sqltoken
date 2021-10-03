@@ -53,6 +53,9 @@ type Config struct {
 	// Tokenize :word as type ColonWord (sqlx, Oracle)
 	NoticeColonWord bool
 
+	// Tokenize :word with unicode as ColonWord (sqlx)
+	ColonWordIncludesUnicode bool
+
 	// Tokenize # as type comment (MySQL)
 	NoticeHashComment bool
 
@@ -435,6 +438,14 @@ Word:
 			}
 			token(Word)
 			goto BaseState
+		case '\n', '\r', '\t', '\b', '\v', '\f', ' ',
+			'!', '"' /*#*/ /*$*/, '%', '&' /*'*/, '(', ')', '*', '+', '-', '.', '/',
+			':', ';', '<', '=', '>', '?', /*@*/
+			'[', '\\', ']', '^' /*_*/, '`',
+			'{', '|', '}', '~':
+			// minor optimization to avoid DecodeRuneInString
+			token(Word)
+			goto BaseState
 		case '\'':
 			if config.NoticeCharsetLiteral {
 				switch s[tokenStart] {
@@ -478,7 +489,23 @@ ColonWordStart:
 			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z':
 			i++
 			goto ColonWord
+		case '\n', '\r', '\t', '\b', '\v', '\f', ' ',
+			'!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', '-', '.', '/',
+			/*:*/ ';', '<', '=', '>', '?', '@',
+			'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+			'[', '\\', ']', '^', '_', '`',
+			'{', '|', '}', '~':
+			// minor optimization to avoid DecodeRuneInString
+			token(Punctuation)
+			goto BaseState
 		default:
+			if config.ColonWordIncludesUnicode {
+				r, w := utf8.DecodeRuneInString(s[i:])
+				if unicode.IsLetter(r) {
+					i += w
+					goto ColonWord
+				}
+			}
 			token(Punctuation)
 			goto BaseState
 		}
@@ -494,10 +521,31 @@ ColonWord:
 			'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
 			'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
 			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-			'0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+			'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+			'_':
 			i++
 			continue
+		case '.':
+			if config.ColonWordIncludesUnicode {
+				i++
+				continue
+			}
+		case '\n', '\r', '\t', '\b', '\v', '\f', ' ',
+			'!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', '-' /*.*/, '/',
+			':', ';', '<', '=', '>', '?', '@',
+			'[', '\\', ']', '^' /*_*/, '`',
+			'{', '|', '}', '~':
+			// minor optimization to avoid DecodeRuneInString
+			token(ColonWord)
+			goto BaseState
 		default:
+			if config.ColonWordIncludesUnicode {
+				r, w := utf8.DecodeRuneInString(s[i:])
+				if unicode.IsLetter(r) || unicode.IsDigit(r) {
+					i += w
+					continue
+				}
+			}
 			token(ColonWord)
 			goto BaseState
 		}
@@ -590,6 +638,18 @@ PossibleNumber:
 		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			i++
 			goto NumberNoDot
+		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+			'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+			'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+			'\n', '\r', '\t', '\b', '\v', '\f', ' ',
+			'!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', '-', '.', '/',
+			':', ';', '<', '=', '>', '?', '@',
+			'[', '\\', ']', '^', '_', '`',
+			'{', '|', '}', '~':
+			// minor optimization to avoid DecodeRuneInString
+			token(Punctuation)
+			goto BaseState
 		default:
 			r, w := utf8.DecodeRuneInString(s[i:])
 			i += w
@@ -620,11 +680,22 @@ Number:
 				case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 					i++
 					goto Exponent
-				}
-				r, w := utf8.DecodeRuneInString(s[i:])
-				if unicode.IsDigit(r) {
-					i += w
-					goto Exponent
+				case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+					'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+					'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+					'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+					'\n', '\r', '\t', '\b', '\v', '\f', ' ',
+					'!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', '-', '.', '/',
+					':', ';', '<', '=', '>', '?', '@',
+					'[', '\\', ']', '^', '_', '`',
+					'{', '|', '}', '~':
+					// minor optimization to avoid DecodeRuneInString
+				default:
+					r, w := utf8.DecodeRuneInString(s[i:])
+					if unicode.IsDigit(r) {
+						i += w
+						goto Exponent
+					}
 				}
 			}
 			i--
@@ -634,6 +705,19 @@ Number:
 			if !config.NoticeTypedNumbers {
 				i--
 			}
+			token(Number)
+			goto BaseState
+		case 'a', 'b', 'c' /*d*/ /*e*/ /*f*/, 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+			'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+			'A', 'B', 'C' /*D*/ /*E*/ /*F*/, 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+			'\n', '\r', '\t', '\b', '\v', '\f', ' ',
+			'!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', '-' /*.*/, '/',
+			':', ';', '<', '=', '>', '?', '@',
+			'[', '\\', ']', '^', '_', '`',
+			'{', '|', '}', '~':
+			// minor optimization to avoid DecodeRuneInString
+			i--
 			token(Number)
 			goto BaseState
 		default:
@@ -677,6 +761,19 @@ NumberNoDot:
 			}
 			token(Number)
 			goto BaseState
+		case 'a', 'b', 'c' /*d*/ /*e*/ /*f*/, 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+			'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+			'A', 'B', 'C' /*D*/ /*E*/ /*F*/, 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+			'\n', '\r', '\t', '\b', '\v', '\f', ' ',
+			'!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', '-', '.', '/',
+			':', ';', '<', '=', '>', '?', '@',
+			'[', '\\', ']', '^', '_', '`',
+			'{', '|', '}', '~':
+			// minor optimization to avoid DecodeRuneInString
+			i--
+			token(Number)
+			goto BaseState
 		default:
 			r, w := utf8.DecodeRuneInString(s[i-1:])
 			if !unicode.IsDigit(r) {
@@ -703,10 +800,23 @@ Exponent:
 			}
 			token(Number)
 			goto BaseState
+		case 'a', 'b', 'c' /*d*/, 'e' /*f*/, 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+			'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+			'A', 'B', 'C' /*D*/, 'E' /*F*/, 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+			'\n', '\r', '\t', '\b', '\v', '\f', ' ',
+			'!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', '-', '.', '/',
+			':', ';', '<', '=', '>', '?', '@',
+			'[', '\\', ']', '^', '_', '`',
+			'{', '|', '}', '~':
+			// minor optimization to avoid DecodeRuneInString
+			i--
+			token(Number)
+			goto BaseState
 		default:
 			r, w := utf8.DecodeRuneInString(s[i-1:])
 			if !unicode.IsDigit(r) {
-				i -= 1
+				i--
 				token(Number)
 				goto BaseState
 			}
@@ -728,6 +838,19 @@ ExponentConfirmed:
 			if !config.NoticeTypedNumbers {
 				i--
 			}
+			token(Number)
+			goto BaseState
+		case 'a', 'b', 'c' /*d*/, 'e' /*f*/, 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+			'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+			'A', 'B', 'C' /*D*/, 'E' /*F*/, 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+			'\n', '\r', '\t', '\b', '\v', '\f', ' ',
+			'!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', '-', '.', '/',
+			':', ';', '<', '=', '>', '?', '@',
+			'[', '\\', ']', '^', '_', '`',
+			'{', '|', '}', '~':
+			// minor optimization to avoid DecodeRuneInString
+			i--
 			token(Number)
 			goto BaseState
 		default:
@@ -783,6 +906,20 @@ Whitespace:
 		i++
 		switch c {
 		case ' ', '\n', '\r', '\t', '\b', '\v', '\f':
+			// whitespace!
+		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+			'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+			'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+			'!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', '-', '.', '/',
+			':', ';', '<', '=', '>', '?', '@',
+			'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+			'[', '\\', ']', '^', '_', '`',
+			'{', '|', '}', '~':
+			// minor optimization to avoid DecodeRuneInString
+			i--
+			token(Whitespace)
+			goto BaseState
 		default:
 			r, w := utf8.DecodeRuneInString(s[i-1:])
 			if !unicode.IsSpace(r) && !unicode.IsControl(r) {
@@ -859,12 +996,25 @@ DeliminatedString:
 		case '{':
 			charDelim = '}'
 			goto DeliminatedStringCharacter
-		case ' ', '\n', '\t':
+		// [{<(
+		case ')', '>', '}', ']',
+			'\n', '\r', '\t', '\b', '\v', '\f', ' ':
 			// not a valid delimiter
 			i -= 2
 			token(Word)
 			i++
 			goto SingleQuoteString
+		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+			'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+			'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+			'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+			'!', '"', '#', '$', '%', '&', '\'' /*(*/ /*)*/, '*', '+', '-', '.', '/',
+			':', ';' /*<*/, '=' /*>*/, '?', '@',
+			/*[*/ '\\' /*]*/, '^', '_', '`',
+			/*{*/ '|' /*}*/, '~':
+			// minor optimzation to avoid DecodeRuneInString
+			charDelim = c
+			goto DeliminatedStringCharacter
 		default:
 			r, w := utf8.DecodeRuneInString(s[i-1:])
 			if w == 1 {

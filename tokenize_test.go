@@ -568,6 +568,13 @@ var mySQLCases = []Tokens{
 		{Type: Word, Text: "_foo"},
 		{Type: Whitespace, Text: " "},
 	},
+	{
+		{Type: Word, Text: "m26"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: ":"},
+		{Type: Word, Text: "名前"},
+		{Type: Punctuation, Text: ")"},
+	},
 }
 
 var postgreSQLCases = []Tokens{
@@ -1115,6 +1122,44 @@ var oddball1Cases = []Tokens{
 	},
 }
 
+// SQLx
+var oddball2Cases = []Tokens{
+	{
+		{Type: Word, Text: "sqlx1"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "INSERT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "INTO"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "foo"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: "("},
+		{Type: Word, Text: "a"},
+		{Type: Punctuation, Text: ","},
+		{Type: Word, Text: "b"},
+		{Type: Punctuation, Text: ","},
+		{Type: Word, Text: "c"},
+		{Type: Punctuation, Text: ","},
+		{Type: Word, Text: "d"},
+		{Type: Punctuation, Text: ")"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "VALUES"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: "("},
+		{Type: ColonWord, Text: ":あ"},
+		{Type: Punctuation, Text: ","},
+		{Type: Whitespace, Text: " "},
+		{Type: ColonWord, Text: ":b"},
+		{Type: Punctuation, Text: ","},
+		{Type: Whitespace, Text: " "},
+		{Type: ColonWord, Text: ":キコ"},
+		{Type: Punctuation, Text: ","},
+		{Type: Whitespace, Text: " "},
+		{Type: ColonWord, Text: ":名前"},
+		{Type: Punctuation, Text: ")"},
+	},
+}
+
 func doTests(t *testing.T, config Config, cases ...[]Tokens) {
 	for _, tcl := range cases {
 		for _, tc := range tcl {
@@ -1130,7 +1175,6 @@ func doTests(t *testing.T, config Config, cases ...[]Tokens) {
 				got := Tokenize(text, config)
 				require.Equal(t, text, got.String(), tc.String())
 				require.Equal(t, tc, got, tc.String())
-				return
 			})
 		}
 	}
@@ -1156,6 +1200,13 @@ func TestOddbal1Tokenizing(t *testing.T) {
 	c := SQLServerConfig()
 	c.NoticeAtWord = false
 	doTests(t, c, commonCases, oddball1Cases)
+}
+
+func TestOddbal2Tokenizing(t *testing.T) {
+	c := MySQLConfig()
+	c.NoticeColonWord = true
+	c.ColonWordIncludesUnicode = true
+	doTests(t, c, commonCases, oddball2Cases)
 }
 
 func TestStrip(t *testing.T) {
