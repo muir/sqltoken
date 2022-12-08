@@ -1164,7 +1164,7 @@ func (ts Tokens) Strip() Tokens {
 	}
 	c := make(Tokens, 0, len(ts))
 	var lastReal int
-	for i < len(ts) {
+	for ; i < len(ts); i++ {
 		// nolint:exhaustive
 		switch ts[i].Type {
 		case Comment:
@@ -1180,7 +1180,6 @@ func (ts Tokens) Strip() Tokens {
 			c = append(c, ts[i])
 			lastReal = len(c)
 		}
-		i++
 	}
 	c = c[:lastReal]
 	return c
