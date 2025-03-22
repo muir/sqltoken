@@ -1160,6 +1160,37 @@ var oddball2Cases = []Tokens{
 	},
 }
 
+// SQLx
+var separatePunctuationCases = []Tokens{
+	{
+		{Type: Word, Text: "INSERT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "INTO"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "foo"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: "("},
+		{Type: Word, Text: "a"},
+		{Type: Punctuation, Text: ","},
+		{Type: Word, Text: "b"},
+		{Type: Punctuation, Text: ","},
+		{Type: Word, Text: "c"},
+		{Type: Punctuation, Text: ","},
+		{Type: Word, Text: "d"},
+		{Type: Punctuation, Text: ")"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "VALUES"},
+		{Type: Punctuation, Text: "("},
+		{Type: Word, Text: "NOW"},
+		{Type: Punctuation, Text: "("},
+		{Type: Punctuation, Text: ")"},
+		{Type: Punctuation, Text: ","},
+		{Type: Whitespace, Text: " "},
+		{Type: ColonWord, Text: ":b"},
+		{Type: Punctuation, Text: ")"},
+	},
+}
+
 func doTests(t *testing.T, config Config, cases ...[]Tokens) {
 	for _, tcl := range cases {
 		for _, tc := range tcl {
@@ -1208,6 +1239,14 @@ func TestOddbal2Tokenizing(t *testing.T) {
 	c.NoticeColonWord = true
 	c.ColonWordIncludesUnicode = true
 	doTests(t, c, commonCases, oddball2Cases)
+}
+
+func TestSeparatePunctuationTokenizing(t *testing.T) {
+	c := MySQLConfig()
+	c.NoticeColonWord = true
+	c.NoticeQuestionMark = true
+	c.SeparatePunctuation = true
+	doTests(t, c, separatePunctuationCases)
 }
 
 func TestStrip(t *testing.T) {

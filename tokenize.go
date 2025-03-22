@@ -28,15 +28,6 @@ const (
 	Other // control characters and other non-printables
 )
 
-func combineOkay(t TokenType) bool {
-	// nolint:exhaustive
-	switch t {
-	case Number, QuestionMark, DollarNumber, ColonWord:
-		return false
-	}
-	return true
-}
-
 type Token struct {
 	Type TokenType
 	Text string
@@ -92,6 +83,20 @@ type Config struct {
 
 	// NoticeAtIdentifiers _baz @fo$o @@b#ar #foo ##b@ar(SQL Server)
 	NoticeIdentifiers bool
+
+	// SeparatePunctuation prevents merging successive punctuation into a single token
+	SeparatePunctuation bool
+}
+
+func (c Config) combineOkay(t TokenType) bool {
+	// nolint:exhaustive
+	switch t {
+	case Number, QuestionMark, DollarNumber, ColonWord:
+		return false
+	case Punctuation:
+		return !c.SeparatePunctuation
+	}
+	return true
 }
 
 type Tokens []Token
@@ -185,7 +190,7 @@ func Tokenize(s string, config Config) Tokens {
 		if i-tokenStart == 0 {
 			return
 		}
-		if len(tokens) > 0 && tokens[len(tokens)-1].Type == t && combineOkay(t) {
+		if len(tokens) > 0 && tokens[len(tokens)-1].Type == t && config.combineOkay(t) {
 			tokens[len(tokens)-1].Text = s[tokenStart-len(tokens[len(tokens)-1].Text) : i]
 		} else {
 			tokens = append(tokens, Token{
