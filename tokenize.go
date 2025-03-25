@@ -88,6 +88,108 @@ type Config struct {
 	SeparatePunctuation bool
 }
 
+// WithNoticeQuestionMark enables paring question marks using the QuestionMark token
+func (c Config) WithNoticeQuestionMark() Config {
+	c.NoticeQuestionMark = true
+	return c
+}
+
+// WithNoticeDollarNumber enables parsing dollar parameters ($1) for PostgreSQL using the DollarNumber token
+func (c Config) WithNoticeDollarNumber() Config {
+	c.NoticeDollarNumber = true
+	return c
+}
+
+// WithNoticeColonWord enables parsing for named parameters using the ColonWord token
+func (c Config) WithNoticeColonWord() Config {
+	c.NoticeColonWord = true
+	return c
+}
+
+// WithColonWordIncludesUnicode enables unicode name parsing at a small performance cost
+func (c Config) WithColonWordIncludesUnicode() Config {
+	c.ColonWordIncludesUnicode = true
+	return c
+}
+
+// WithNoticeHashComment enables parsing for '#' comments (MySQL) using the Punctuation token
+func (c Config) WithNoticeHashComment() Config {
+	c.NoticeHashComment = true
+	return c
+}
+
+// WithNoticeDollarQuotes enables dollar quote $$parsing$$ for PostgreSQL using the DollarNumber token
+func (c Config) WithNoticeDollarQuotes() Config {
+	c.NoticeDollarQuotes = true
+	return c
+}
+
+// WithNoticeHexNumbers enables quoted hex number parsing (x'af') using the HexNumber token (MySQL)
+func (c Config) WithNoticeHexNumbers() Config {
+	c.NoticeHexNumbers = true
+	return c
+}
+
+// WithNoticeBinaryNumbers enables quoted binary number parsing (b'01') using the BinaryNumber token (MySQL)
+func (c Config) WithNoticeBinaryNumbers() Config {
+	c.NoticeBinaryNumbers = true
+	return c
+}
+
+// WithNoticeUAmpPrefix enables U& prefix parsing (U&"\0441\043B\043E\043D") using the Literal token (PostgreSQL)
+func (c Config) WithNoticeUAmpPrefix() Config {
+	c.NoticeUAmpPrefix = true
+	return c
+}
+
+// WithNoticeCharsetLiteral enables charset literal parsing (_latin1'string') using the Literal token (MySQL)
+func (c Config) WithNoticeCharsetLiteral() Config {
+	c.NoticeCharsetLiteral = true
+	return c
+}
+
+// WithNoticeNotionalStrings enables notional string parsing (n'string') using the Literal token (Oracle, SQL Server)
+func (c Config) WithNoticeNotionalStrings() Config {
+	c.NoticeNotionalStrings = true
+	return c
+}
+
+// WithNoticeDeliminatedStrings enables deliminated string parsing (q'DELIM .... DELIM') using the Literal token (Oracle)
+func (c Config) WithNoticeDeliminatedStrings() Config {
+	c.NoticeDeliminatedStrings = true
+	return c
+}
+
+// WithNoticeTypedNumbers enables typed number parsing (nn.nnEnn[fFdD]) using the Number token (Oracle)
+func (c Config) WithNoticeTypedNumbers() Config {
+	c.NoticeTypedNumbers = true
+	return c
+}
+
+// WithNoticeMoneyConstants enables money constant parsing ($10 $10.32) using the DollarNumber token (SQL Server)
+func (c Config) WithNoticeMoneyConstants() Config {
+	c.NoticeMoneyConstants = true
+	return c
+}
+
+// WithNoticeAtWord enables parsing for '@foo' (SQL Server) using the AtWord token
+func (c Config) WithNoticeAtWord() Config {
+	c.NoticeAtWord = true
+	return c
+}
+
+// WithNoticeIdentifiers enables parsing for identifiers (SQL Server) using the Identifier token
+func (c Config) WithNoticeIdentifiers() Config {
+	c.NoticeIdentifiers = true
+	return c
+}
+
+// WithSeparatePunctuation enables separating successive punctuation into separate tokens
+func (c Config) WithSeparatePunctuation() Config {
+	c.SeparatePunctuation = true
+	return c
+}
+
 func (c Config) combineOkay(t TokenType) bool {
 	// nolint:exhaustive
 	switch t {
@@ -107,46 +209,42 @@ type TokensList []Tokens
 // for parsing Oracle's SQL
 func OracleConfig() Config {
 	// https://docs.oracle.com/en/database/oracle/oracle-database/19/sqlrf/Literals.html
-	return Config{
-		NoticeNotionalStrings:    true,
-		NoticeDeliminatedStrings: true,
-		NoticeTypedNumbers:       true,
-		NoticeColonWord:          true,
-	}
+	return Config{}.
+		WithNoticeNotionalStrings().
+		WithNoticeDeliminatedStrings().
+		WithNoticeTypedNumbers().
+		WithNoticeColonWord()
 }
 
 // SQLServerConfig returns a parsing configuration that is appropriate
 // for parsing SQLServer's SQL
 func SQLServerConfig() Config {
-	return Config{
-		NoticeNotionalStrings: true,
-		NoticeHexNumbers:      true,
-		NoticeMoneyConstants:  true,
-		NoticeAtWord:          true,
-		NoticeIdentifiers:     true,
-	}
+	return Config{}.
+		WithNoticeNotionalStrings().
+		WithNoticeHexNumbers().
+		WithNoticeMoneyConstants().
+		WithNoticeAtWord().
+		WithNoticeIdentifiers()
 }
 
 // MySQL returns a parsing configuration that is appropriate
 // for parsing MySQL, MariaDB, and SingleStore SQL.
 func MySQLConfig() Config {
-	return Config{
-		NoticeQuestionMark:   true,
-		NoticeHashComment:    true,
-		NoticeHexNumbers:     true,
-		NoticeBinaryNumbers:  true,
-		NoticeCharsetLiteral: true,
-	}
+	return Config{}.
+		WithNoticeQuestionMark().
+		WithNoticeHashComment().
+		WithNoticeHexNumbers().
+		WithNoticeBinaryNumbers().
+		WithNoticeCharsetLiteral()
 }
 
 // PostgreSQL returns a parsing configuration that is appropriate
 // for parsing PostgreSQL and CockroachDB SQL.
 func PostgreSQLConfig() Config {
-	return Config{
-		NoticeDollarNumber: true,
-		NoticeDollarQuotes: true,
-		NoticeUAmpPrefix:   true,
-	}
+	return Config{}.
+		WithNoticeDollarNumber().
+		WithNoticeDollarQuotes().
+		WithNoticeUAmpPrefix()
 }
 
 // TokenizeMySQL breaks up MySQL / MariaDB / SingleStore SQL strings into
