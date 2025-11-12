@@ -1240,6 +1240,7 @@ Done:
 	return tokens
 }
 
+// String returns exactly the original text unless Strip() has been called.
 func (ts Tokens) String() string {
 	if len(ts) == 0 {
 		return ""
@@ -1289,22 +1290,35 @@ func (ts Tokens) Strip() Tokens {
 }
 
 // CmdSplit breaks up the token array into multiple token arrays,
-// one per command (splitting on ";")
+// one per command (splitting on ";") and Strip()ing each of the
+// returned Tokens.
 func (ts Tokens) CmdSplit() TokensList {
-	var r TokensList
-	start := 0
-	for i, t := range ts {
-		if t.Type == Semicolon {
-			r = append(r, Tokens(ts[start:i]).Strip())
-			start = i + 1
-		}
-	}
-	if start < len(ts) {
-		r = append(r, Tokens(ts[start:]).Strip())
+	r := ts.CmdSplitUnstripped()
+	for i, t := range r {
+		r[i] = t.Strip()
 	}
 	return r
 }
 
+// CmdSplitUnstripped breaks up the token array into multiple token arrays,
+// one per command (splitting on ";"). It does not Strip() the commands.
+func (ts Tokens) CmdSplitUnstripped() TokensList {
+	var r TokensList
+	start := 0
+	for i, t := range ts {
+		if t.Type == Semicolon {
+			r = append(r, Tokens(ts[start:i]))
+			start = i + 1
+		}
+	}
+	if start < len(ts) {
+		r = append(r, Tokens(ts[start:]))
+	}
+	return r
+}
+
+// Strings returns exactly the original text of each Tokens (except the colons)
+// unless Strip() or CmdSplit() was called.
 func (tl TokensList) Strings() []string {
 	r := make([]string, 0, len(tl))
 	for _, ts := range tl {

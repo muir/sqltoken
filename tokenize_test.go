@@ -1,6 +1,7 @@
 package sqltoken
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -1298,5 +1299,48 @@ func TestCmdSplit(t *testing.T) {
 	for _, tc := range cases {
 		ts := TokenizeMySQL(tc.input)
 		require.Equalf(t, tc.want, ts.CmdSplit().Strings(), tc.input)
+	}
+}
+
+// New tests exercising CmdSplitUnstripped and raw Strings output
+func TestCmdSplitUnstrippedStrings(t *testing.T) {
+	cases := []struct {
+		raw      []string // expected Strings() from CmdSplitUnstripped (unmodified slices)
+		stripped []string // expected Strings() from CmdSplit (after Strip)
+	}{
+		{
+			raw:      []string{},
+			stripped: []string{},
+		},
+		{
+			raw:      []string{"-- cmt\n"},
+			stripped: []string{},
+		},
+		{
+			raw:      []string{"SELECT 1", " SELECT 2"},
+			stripped: []string{"SELECT 1", "SELECT 2"},
+		},
+		{
+			raw:      []string{" /* foo */ bar \n baz  ", " "}, // trailing whitespace segment retained
+			stripped: []string{"bar baz"},
+		},
+		{
+			raw:      []string{" /* foo */ bar \n ", "baz  ", " "},
+			stripped: []string{"bar", "baz"},
+		},
+		{
+			raw:      []string{"-- cmt\nSELECT 3 ", "  SELECT 4  "},
+			stripped: []string{"SELECT 3", "SELECT 4"},
+		},
+	}
+	for _, tc := range cases {
+		input := strings.Join(tc.raw, ";")
+		ts := TokenizeMySQL(input)
+		// Baseline: original String() matches original input text
+		require.Equal(t, input, ts.String(), input)
+		rawList := ts.CmdSplitUnstripped().Strings()
+		require.Equalf(t, tc.raw, rawList, "raw mismatch for %q", input)
+		stripList := ts.CmdSplit().Strings()
+		require.Equalf(t, tc.stripped, stripList, "stripped mismatch for %q", input)
 	}
 }
