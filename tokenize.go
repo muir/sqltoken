@@ -1317,7 +1317,7 @@ func (ts Tokens) CmdSplitUnstripped() TokensList {
 	return r
 }
 
-// Strings returns exactly the original text of each Tokens (except the colons)
+// Strings returns exactly the original text of each Tokens (except the semicolons)
 // unless Strip() or CmdSplit() was called.
 func (tl TokensList) Strings() []string {
 	r := make([]string, 0, len(tl))
