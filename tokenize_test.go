@@ -1288,8 +1288,8 @@ func TestCmdSplit(t *testing.T) {
 			want:  []string{},
 		},
 		{
-			input: " /* foo */ bar \n baz  ; ",
-			want:  []string{"bar baz"},
+			input: " /* foo */ bat \n baz  ; ",
+			want:  []string{"bat baz"},
 		},
 		{
 			input: " /* foo */ bar \n ;baz  ; ",
@@ -1298,7 +1298,8 @@ func TestCmdSplit(t *testing.T) {
 	}
 	for _, tc := range cases {
 		ts := TokenizeMySQL(tc.input)
-		require.Equalf(t, tc.want, ts.CmdSplit().Strings(), tc.input)
+		require.Equal(t, tc.want, ts.CmdSplit().Strings(), tc.input)
+		require.Equal(t, strings.Join(tc.want, ";"), ts.CmdSplit().Join().String(), tc.input)
 	}
 }
 
