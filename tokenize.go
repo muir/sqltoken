@@ -5,6 +5,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/muir/list"
 )
 
 //go:generate enumer -type=TokenType -json
@@ -1317,7 +1319,7 @@ func (ts Tokens) CmdSplitUnstripped() TokensList {
 	return r
 }
 
-// Strings returns exactly the original text of each Tokens (except the colons)
+// Strings returns exactly the original text of each Tokens (except the semicolons)
 // unless Strip() or CmdSplit() was called.
 func (tl TokensList) Strings() []string {
 	r := make([]string, 0, len(tl))
@@ -1328,4 +1330,30 @@ func (tl TokensList) Strings() []string {
 		}
 	}
 	return r
+}
+
+var semiToken = Token{
+	Type: Semicolon,
+	Text: ";",
+}
+
+// Join reverses Split: adding ; between the token lists
+func (tl TokensList) Join() Tokens {
+	tl = list.FilterEmptySlices(tl)
+	if len(tl) == 0 {
+		return Tokens{}
+	}
+	var l int
+	for _, tokens := range tl {
+		l += len(tokens)
+	}
+	l += len(tl) - 1
+	rejoined := make(Tokens, 0, l)
+	for i, tokens := range tl {
+		if i > 0 {
+			rejoined = append(rejoined, semiToken)
+		}
+		rejoined = append(rejoined, tokens...)
+	}
+	return rejoined
 }
