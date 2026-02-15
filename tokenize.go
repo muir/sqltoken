@@ -27,12 +27,33 @@ const (
 	Semicolon
 	Punctuation
 	Word
-	Other // control characters and other non-printables
+	Other     // control characters and other non-printables
+	Delimiter // used in MySQL
 )
 
 type Token struct {
 	Type TokenType
 	Text string
+	// Delimiter is set when Type == Delimiter
+	// And after CmdSplit/CmdStripUnstripped on the first token of each
+	// command when there is a delimiter other than ;
+	// Do not set manually.
+	Delimiter Tokens
+	// Split is set on the last token in a Tokens after CmdSplit/CmdSplitUnstripped
+	// to capture the ; discarded by splitting.
+	// Do not set manually.
+	Split Tokens
+	// Strip captures what was before when you Strip() a tokens. It can be set on
+	// any Token and it includes the Token itself
+	// Do not set manually.
+	Strip Tokens
+}
+
+func (t Token) Copy() Token {
+	t.Delimiter = copySlice(t.Delimiter)
+	t.Split = copySlice(t.Split)
+	t.Strip = copySlice(t.Strip)
+	return t
 }
 
 // Config specifies the behavior of Tokenize as relates to behavior
@@ -88,9 +109,12 @@ type Config struct {
 
 	// SeparatePunctuation prevents merging successive punctuation into a single token
 	SeparatePunctuation bool
+
+	// NoticeDelimiter DELIMITER END;
+	NoticeDelimiter bool
 }
 
-// WithNoticeQuestionMark enables paring question marks using the QuestionMark token
+// WithNoticeQuestionMark enables parsing question marks using the QuestionMark token
 func (c Config) WithNoticeQuestionMark() Config {
 	c.NoticeQuestionMark = true
 	return c
@@ -192,6 +216,11 @@ func (c Config) WithSeparatePunctuation() Config {
 	return c
 }
 
+func (c Config) WithNoticeDelimiter() Config {
+	c.NoticeDelimiter = true
+	return c
+}
+
 func (c Config) combineOkay(t TokenType) bool {
 	// nolint:exhaustive
 	switch t {
@@ -205,7 +234,29 @@ func (c Config) combineOkay(t TokenType) bool {
 
 type Tokens []Token
 
+func (ts Tokens) Copy() Tokens {
+	if ts == nil {
+		return nil
+	}
+	n := make(Tokens, len(ts))
+	for i, t := range ts {
+		n[i] = t.Copy()
+	}
+	return n
+}
+
 type TokensList []Tokens
+
+func (tl TokensList) Copy() TokensList {
+	if tl == nil {
+		return nil
+	}
+	n := make(TokensList, len(tl))
+	for i, ts := range tl {
+		n[i] = ts.Copy()
+	}
+	return n
+}
 
 // OracleConfig returns a parsing configuration that is appropriate
 // for parsing Oracle's SQL
@@ -237,7 +288,8 @@ func MySQLConfig() Config {
 		WithNoticeHashComment().
 		WithNoticeHexNumbers().
 		WithNoticeBinaryNumbers().
-		WithNoticeCharsetLiteral()
+		WithNoticeCharsetLiteral().
+		WithNoticeDelimiter()
 }
 
 // PostgreSQL returns a parsing configuration that is appropriate
@@ -275,6 +327,8 @@ func Tokenize(s string, config Config) Tokens {
 	var firstDollarEnd int
 	var runeDelim rune
 	var charDelim byte
+	delimiterStart := -1
+	var foundWhitespaceAfterDelimiterStart bool
 
 	// Why is this written with Goto you might ask?  It's written
 	// with goto because RE2 can't handle complex regex and PCRE
@@ -297,6 +351,23 @@ func Tokenize(s string, config Config) Tokens {
 				Type: t,
 				Text: s[tokenStart:i],
 			})
+		}
+		if config.NoticeDelimiter {
+			t := tokens[len(tokens)-1]
+			switch {
+			case t.Type == Word && strings.ToLower(t.Text) == "delimiter":
+				delimiterStart = len(tokens) - 1
+				foundWhitespaceAfterDelimiterStart = false
+			case delimiterStart >= 0 && len(tokens)-2 == delimiterStart && t.Type == Whitespace && !strings.ContainsRune(t.Text, '\n'):
+				foundWhitespaceAfterDelimiterStart = true
+			case foundWhitespaceAfterDelimiterStart && t.Type == Whitespace:
+				if len(tokens)-2 > delimiterStart && strings.ContainsRune(t.Text, '\n') {
+					tokens[delimiterStart].Type = Delimiter
+					tokens[delimiterStart].Delimiter = tokens[delimiterStart+2 : len(tokens)-1]
+				}
+				delimiterStart = -1
+				foundWhitespaceAfterDelimiterStart = false
+			}
 		}
 		tokenStart = i
 	}
@@ -1242,7 +1313,8 @@ Done:
 	return tokens
 }
 
-// String returns exactly the original text unless Strip() has been called.
+// String returns exactly the original text unless the Tokens is a result of
+// Strip() or CmdSplit(), or CmdSplitUnstripped().
 func (ts Tokens) String() string {
 	if len(ts) == 0 {
 		return ""
@@ -1251,14 +1323,33 @@ func (ts Tokens) String() string {
 	for i, t := range ts {
 		strs[i] = t.Text
 	}
+	if ts[0].Type != Delimiter && ts[0].Delimiter != nil {
+		ds := ts[0].Delimiter.String()
+		return "DELIMITER " +
+			ds +
+			"\n" +
+			strings.Join(strs, "") +
+			ds +
+			"\nDELIMITER ;\n"
+	}
 	return strings.Join(strs, "")
 }
 
-// Strip removes leading/trailing whitespace and semicolors
+// Strip removes leading/trailing whitespace and semicolons
 // and strips all internal comments.  Internal whitespace
-// is changed to a single space.
+// is changed to a single space. Strip is not reversible if there
+// is no command present (all whitespace and/or comment).
 func (ts Tokens) Strip() Tokens {
+	type CSpace int // CSpace are indexes into c.
+	if len(ts) == 0 {
+		return ts
+	}
+	var delimiter Tokens
+	if ts[0].Type != Delimiter {
+		delimiter = ts[0].Delimiter
+	}
 	i := 0
+	// Initial comments/whitespace/etc are skipped
 	for i < len(ts) {
 		// nolint:exhaustive
 		switch ts[i].Type {
@@ -1269,57 +1360,232 @@ func (ts Tokens) Strip() Tokens {
 		break
 	}
 	c := make(Tokens, 0, len(ts))
-	var lastReal int
+	// lastReal-1 is the index of the last item in c that is a real (not whitespace etc) token
+	var lastReal CSpace
+	// lastWhitespace is used to prevent multiple whitespaces between real items
+	var lastWhitespace CSpace
+
+	// captureSkip is called after appending to c but before updating lastReal
+	// the item just appended may or may not end up stripped
+	var lastCapture int
+	captureSkip := func() {
+		count := i - lastCapture
+		if count > 0 {
+			lastIndex := CSpace(len(c) - 1)
+			token := c[lastIndex].Copy()
+			token.Strip = ts[lastCapture : i+1] // includes self
+			c[lastIndex] = token
+		}
+		lastCapture = i + 1
+	}
+	// lastKeptCapture tracks i as lastReal tracks c
+	var lastKeptCapture int
+
 	for ; i < len(ts); i++ {
+	Top:
+		// If we have a an alternative delimiter set, we have to check to see if we've just encountered it.
+		if delimiter != nil && delimiterMatches(ts, i, delimiter) {
+			c = append(c, ts[i:i+len(delimiter)]...)
+			i += len(delimiter)
+			captureSkip()
+			goto Top
+		}
+
+		if ts[i].Delimiter != nil && ts[i].Type != Delimiter {
+			delimiter = ts[i].Delimiter
+		}
 		// nolint:exhaustive
 		switch ts[i].Type {
+		case Delimiter:
+			nlIndex := i + 2 + len(ts[i].Delimiter)
+			if delimiterMatches(ts, i+2, ts[i].Delimiter) &&
+				ts[i+1].Type == Whitespace &&
+				len(ts)-1 >= nlIndex &&
+				ts[nlIndex].Type == Whitespace &&
+				ts[nlIndex].Text[0] == '\n' {
+				c = append(c, ts[i])
+				captureSkip()
+				// c = append(c, Token{Type: Other}) // XXX
+				c = append(c, ts[i+1:nlIndex+1]...)
+				lastReal = CSpace(len(c))
+				lastWhitespace = CSpace(len(c))
+				i = nlIndex
+				lastKeptCapture = i + 1
+				lastCapture = i + 1
+			}
 		case Comment:
-			continue
+			// skip it
 		case Whitespace:
-			c = append(c, Token{
-				Type: Whitespace,
-				Text: " ",
-			})
+			// only append whitespace if there hasn't been a whitespace since lastReal
+			if lastWhitespace < lastReal {
+				if ts[i].Text != " " {
+					c = append(c, Token{
+						Type:  Whitespace,
+						Text:  " ",
+						Strip: Tokens{ts[i]},
+					})
+				} else {
+					c = append(c, ts[i])
+				}
+				captureSkip()
+				lastWhitespace = CSpace(len(c))
+			}
 		case Semicolon:
 			c = append(c, ts[i])
+			if delimiter != nil {
+				lastReal = CSpace(len(c))
+				lastKeptCapture = i + 1
+			}
+			captureSkip()
 		default:
 			c = append(c, ts[i])
-			lastReal = len(c)
+			captureSkip()
+			lastReal = CSpace(len(c))
+			lastKeptCapture = i + 1
 		}
 	}
-	c = c[:lastReal]
+	if lastReal < CSpace(len(c)) {
+		c = c[:lastReal]
+	}
+	if len(c) > 0 {
+		count := i - lastKeptCapture
+		if count > 0 {
+			lastIndex := CSpace(len(c) - 1)
+			token := c[lastIndex]
+			if token.Strip == nil {
+				token = token.Copy()
+				token.Strip = ts[lastKeptCapture-1:]
+			} else {
+				token.Strip = copySlice(token.Strip)
+				token.Strip = append(token.Strip, ts[lastKeptCapture:]...)
+			}
+			token.Split = ts[len(ts)-1].Split
+			c[lastIndex] = token
+			// c = append(c, Token{Type: Number}) // XXX
+		}
+		if delimiter != nil && c[0].Delimiter == nil {
+			c[0] = c[0].Copy()
+			c[0].Delimiter = delimiter
+		}
+	}
 	return c
 }
 
+// Unstrip reverses a Strip
+func (ts Tokens) Unstrip() Tokens {
+	n := make([]Token, 0, len(ts))
+	for _, token := range ts {
+		if token.Strip != nil {
+			n = append(n, token.Strip...)
+		} else {
+			n = append(n, token)
+		}
+	}
+	return Tokens(n)
+}
+
 // CmdSplit breaks up the token array into multiple token arrays,
-// one per command (splitting on ";") and Strip()ing each of the
-// returned Tokens.
+// one per command (splitting on ";" or on the delimiter if there
+// is a delimiter set) and Strip()ing each of the returned Tokens.
+//
+// DELIMITER commands become an annotation on each command (in the first
+// token) that has a special delimiter (rather than being a stand-alone command).
+// That annotation will turn into bracketing each command with
+// DELIMITER commands thus producing a result that is longer than the
+// original but logically equivalent with each command self-contained.
 func (ts Tokens) CmdSplit() TokensList {
 	r := ts.CmdSplitUnstripped()
-	for i, t := range r {
-		r[i] = t.Strip()
+	stripped := make(TokensList, 0, len(r))
+	for _, t := range r {
+		s := t.Strip()
+		if len(s) > 0 {
+			stripped = append(stripped, s)
+		}
 	}
-	return r
+	return stripped
 }
 
 // CmdSplitUnstripped breaks up the token array into multiple token arrays,
 // one per command (splitting on ";"). It does not Strip() the commands.
+// Empty (just comments/whitespace) commands are eliminated and
+// are not recoverable with Join().
+//
+// DELIMITER commands become an annotation on each command (in the first
+// token) that has a special delimiter (rather than being a stand-alone command).
+// That annotation will turn into bracketing each command with
+// DELIMITER commands thus producing a result that is longer than the
+// original but logically equivelent with each command self-contained.
 func (ts Tokens) CmdSplitUnstripped() TokensList {
 	var r TokensList
 	start := 0
+	var delimiter Tokens
+	var queuedDelimiter Tokens
+	capture := func(add Tokens, split []Token) {
+		if l := len(add); l > 0 {
+			safe := add.Copy()
+			//nolint:staticcheck // QF1001 De Morgan's law violation
+			if delimiter != nil && !(len(safe) == 1 && safe[0].Type == Whitespace) {
+				// add the delimiter but not if it's just whitespace
+				safe[0].Delimiter = delimiter
+			}
+			if len(split) != 0 {
+				safe[l-1].Split = Tokens(split)
+			}
+			r = append(r, safe)
+		}
+	}
+OuterLoop:
 	for i, t := range ts {
-		if t.Type == Semicolon {
-			r = append(r, Tokens(ts[start:i]))
+		switch {
+		case t.Type == Delimiter:
+			if delimiter != nil && start < i {
+				// preserve any non-commands that precede the DELIMITER command
+				capture(ts[start:i], nil)
+				start = i
+			}
+			// We know we can expect space delimiter newline next
+			queuedDelimiter = t.Delimiter
+			continue
+		case queuedDelimiter != nil && t.Type == Whitespace && strings.ContainsRune(t.Text, '\n'):
+			delimiter = queuedDelimiter
+			if len(delimiter) == 1 && delimiter[0].Type == Semicolon {
+				delimiter = nil
+			}
+			queuedDelimiter = nil
+			start = i + 1
+			continue
+		case queuedDelimiter != nil:
+			continue
+		case delimiter != nil:
+			if !delimiterMatches(ts, i, delimiter) {
+				continue OuterLoop
+			}
+			capture(ts[start:i], ts[i:i+len(delimiter)])
+			start = i + len(delimiter)
+		case t.Type == Semicolon:
+			capture(ts[start:i], []Token{t})
 			start = i + 1
 		}
 	}
 	if start < len(ts) {
-		r = append(r, Tokens(ts[start:]))
+		capture(Tokens(ts[start:]), nil)
 	}
 	return r
 }
 
-// Strings returns exactly the original text of each Tokens (except the semicolons)
+func delimiterMatches(ts Tokens, i int, delimiter Tokens) bool {
+	if len(ts)-1-i < len(delimiter) {
+		return false
+	}
+	for j, dt := range delimiter {
+		if dt.Text != ts[i+j].Text {
+			return false
+		}
+	}
+	return true
+}
+
+// Strings returns almost exactly the original text of each Tokens (except the semicolons)
 // unless Strip() or CmdSplit() was called.
 func (tl TokensList) Strings() []string {
 	r := make([]string, 0, len(tl))
@@ -1332,12 +1598,10 @@ func (tl TokensList) Strings() []string {
 	return r
 }
 
-var semiToken = Token{
-	Type: Semicolon,
-	Text: ";",
-}
-
-// Join reverses Split: adding ; between the token lists
+// Join reverses Split: adding back delimiters between the token lists
+//
+// Join does not always recreate the original input. It tries to come
+// close though. Use of DELIMITER will often create small differences.
 func (tl TokensList) Join() Tokens {
 	tl = list.FilterEmptySlices(tl)
 	if len(tl) == 0 {
@@ -1348,12 +1612,138 @@ func (tl TokensList) Join() Tokens {
 		l += len(tokens)
 	}
 	l += len(tl) - 1
+	var delimiter Tokens
+	for i, tokens := range tl {
+		last := tokens[len(tokens)-1]
+		if last.Split != nil {
+			l += len(last.Split)
+		}
+		first := tokens[0]
+		// XXX align with below
+		if first.Delimiter != nil && first.Type != Delimiter {
+			if sameTokens(delimiter, first.Delimiter) {
+				l += len(delimiter)
+			} else {
+				// Delimiter Whitespace <delimiter> Whitespace
+				if len(first.Delimiter) == 1 && first.Delimiter[0].Type == Semicolon {
+					delimiter = nil
+				} else {
+					delimiter = first.Delimiter
+				}
+				l += 3 + len(first.Delimiter)
+				if i > 0 {
+					l++
+				}
+			}
+		} else if delimiter != nil && !(len(tokens) == 1 && tokens[0].Type == Whitespace) { //nolint:staticcheck // QF1001 De Morgan's law violation
+			// If not just whitespace, if there is no
+			// Whitespace Delimiter Whitespace Semicolon Whitespace
+			l += 5
+		}
+	}
+	if delimiter != nil {
+		l += 5
+		delimiter = nil
+	}
 	rejoined := make(Tokens, 0, l)
 	for i, tokens := range tl {
-		if i > 0 {
-			rejoined = append(rejoined, semiToken)
+		if len(tokens) == 0 {
+			continue
+		}
+		first := tokens[0]
+		if first.Delimiter != nil && first.Type != Delimiter {
+			safe := first.Copy()
+			safe.Delimiter = nil
+			safe.Split = nil
+			if sameTokens(delimiter, first.Delimiter) {
+				// Same delimiter as last Tokens
+				rejoined = append(rejoined, safe)
+			} else {
+				rejoined = append(rejoined, Token{Type: QuestionMark}) // XXX
+				delimiter = first.Delimiter
+				if i > 0 {
+					rejoined = append(rejoined, Token{Type: Whitespace, Text: "\n"})
+				}
+				rejoined = append(rejoined,
+					Token{Type: Delimiter, Text: "DELIMITER", Delimiter: first.Delimiter},
+					Token{Type: Whitespace, Text: " "},
+				)
+				rejoined = append(rejoined, delimiter...)
+				rejoined = append(rejoined,
+					Token{Type: Whitespace, Text: "\n"},
+				)
+				if len(delimiter) == 1 && delimiter[0].Type == Semicolon {
+					delimiter = nil
+				}
+				rejoined = append(rejoined, safe)
+				rejoined = append(rejoined, Token{Type: QuestionMark}) // XXX
+			}
+			if len(tokens) == 1 {
+				if first.Split != nil {
+					rejoined = append(rejoined, Token{Type: AtSign}) // XXX
+					rejoined = append(rejoined, first.Split...)
+					rejoined = append(rejoined, Token{Type: AtSign}) // XXX
+				} else {
+					rejoined = append(rejoined, Token{Type: ColonWord}) // XXX
+					rejoined = append(rejoined, first.Delimiter...)
+					rejoined = append(rejoined, Token{Type: ColonWord}) // XXX
+				}
+			}
+			tokens = tokens[1:]
+		} else if delimiter != nil && !(len(tokens) == 1 && tokens[0].Type == Whitespace) { //nolint:staticcheck // QF1001 De Morgan's law violation
+			rejoined = append(rejoined, endDelimiter...)
+			delimiter = nil
 		}
 		rejoined = append(rejoined, tokens...)
+		if len(tokens) > 0 {
+			last := tokens[len(tokens)-1]
+			if last.Split != nil {
+				lastIndex := len(rejoined) - 1
+				token := rejoined[lastIndex].Copy()
+				token.Split = nil
+				rejoined[lastIndex] = token
+				rejoined = append(rejoined, last.Split...)
+			}
+		}
+	}
+	if delimiter != nil {
+		rejoined = append(rejoined, endDelimiter...)
 	}
 	return rejoined
+}
+
+var endDelimiter = []Token{
+	{Type: Whitespace, Text: "\n"},
+	{Type: Delimiter, Text: "DELIMITER", Delimiter: Tokens{
+		Token{Type: Semicolon, Text: ";"},
+	}},
+	{Type: Whitespace, Text: " "},
+	{Type: Semicolon, Text: ";"},
+	{Type: Whitespace, Text: "\n"},
+}
+
+// sameTokens ignores the Delimiter, Split, and Strip annotations
+func sameTokens(a Tokens, b Tokens) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, ta := range a {
+		tb := b[i]
+		if ta.Type != tb.Type {
+			return false
+		}
+		if ta.Text != tb.Text {
+			return false
+		}
+	}
+	return true
+}
+
+func copySlice[E any](s []E) []E {
+	if s == nil {
+		return nil
+	}
+	n := make([]E, len(s))
+	copy(n, s)
+	return n
 }
