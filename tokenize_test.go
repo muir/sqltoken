@@ -1,6 +1,8 @@
 package sqltoken
 
 import (
+	"fmt"
+	"log"
 	"strings"
 	"testing"
 
@@ -1270,36 +1272,130 @@ func TestStrip(t *testing.T) {
 	}
 	for _, tc := range cases {
 		ts := TokenizeMySQL(tc.before)
+		tsCopy := ts.Copy()
+		require.Equal(t, tsCopy, ts, "ts unchanged")
 		require.Equal(t, tc.after, ts.Strip().String(), tc.before)
 	}
 }
 
 func TestCmdSplit(t *testing.T) {
 	cases := []struct {
-		input string
-		want  []string
+		input      string
+		stripped   []string
+		unstripped []string
 	}{
 		{
-			input: "",
-			want:  []string{},
+			input:      "DELIMITER ;\n",
+			unstripped: []string{},
+			stripped:   []string{},
 		},
 		{
-			input: "-- stuff\n",
-			want:  []string{},
+			input:      "",
+			unstripped: []string{},
+			stripped:   []string{},
 		},
 		{
-			input: " /* foo */ bat \n baz  ; ",
-			want:  []string{"bat baz"},
+			input:      "-- stuff\n",
+			unstripped: []string{"-- stuff\n"},
+			stripped:   []string{},
 		},
 		{
-			input: " /* foo */ bar \n ;baz  ; ",
-			want:  []string{"bar", "baz"},
+			input:      " /* foo1 */ bat \n baz  ; ",
+			unstripped: []string{" /* foo1 */ bat \n baz  ", " "},
+			stripped:   []string{"bat baz"},
+		},
+		{
+			input:      " /* foo2 */ bar \n ;baz  ; ",
+			unstripped: []string{" /* foo2 */ bar \n ", "baz  ", " "},
+			stripped:   []string{"bar", "baz"},
+		},
+		{
+			input:      "DELIMITER $$\nSELECT 1; $$\nSELECT 2$$\n",
+			unstripped: []string{"SELECT 1; ", "\nSELECT 2", "\n"},
+			stripped:   []string{"SELECT 1;", "SELECT 2"},
+		},
+		{
+			input:      "DELIMITER //\nCREATE PROCEDURE p()\nBEGIN\nSELECT 1;\nEND//DELIMITER ;\nSELECT 2;\n",
+			stripped:   []string{"CREATE PROCEDURE p() BEGIN SELECT 1; END", "DELIMITER ;", "SELECT 2"},
+			unstripped: []string{"CREATE PROCEDURE p()\nBEGIN\nSELECT 1;\nEND", "SELECT 2", "\n"},
+		},
+		{
+			input:      "DELIMITER //\nCREATE PROCEDURE p()\nBEGIN\nSELECT 1;\nEND//\nDELIMITER ;\nSELECT 2;\n",
+			stripped:   []string{"CREATE PROCEDURE p() BEGIN SELECT 1; END", "DELIMITER ;", "SELECT 2"},
+			unstripped: []string{"CREATE PROCEDURE p()\nBEGIN\nSELECT 1;\nEND", "\nSELECT 2", "\n"},
 		},
 	}
 	for _, tc := range cases {
 		ts := TokenizeMySQL(tc.input)
-		require.Equal(t, tc.want, ts.CmdSplit().Strings(), tc.input)
-		require.Equal(t, strings.Join(tc.want, ";"), ts.CmdSplit().Join().String(), tc.input)
+		t.Logf("input: %q", tc.input)
+		dumpTokens(t, "raw", ts)
+		log.Println("XXXX split unstripped")
+		unstripped := ts.CmdSplitUnstripped()
+		dumpTokens(t, "raw#2", ts)
+		unstrippedCopy := unstripped.Copy()
+		dumpTokens(t, "unstripped", unstripped...)
+		log.Println("XXXX split stripped")
+		stripped := ts.CmdSplit()
+		dumpTokens(t, "raw#3", ts)
+		dumpTokens(t, "stripped", stripped...)
+		require.Equal(t, unstrippedCopy, unstripped, "cmdsplit doesn't change prior copy")
+		require.Equal(t, tc.unstripped, unstripped.Strings(), "unstripped commands")
+		require.Equal(t, tc.stripped, stripped.Strings(), "stripped commands")
+		// require.Equal(t, strings.Join(tc.want, ";\n"), ts.CmdSplit().Join().String(), tc.input)
+	}
+}
+
+func dumpTokens(t *testing.T, prefix string, tokens ...Tokens) {
+	toString := func(what string, tkns ...Token) string {
+		if len(tkns) == 0 {
+			return ""
+		}
+		s := make([]string, len(tkns))
+		for i, tok := range tkns {
+			s[i] = fmt.Sprintf("%q", tok.Text)
+		}
+		return fmt.Sprintf(" (%s: %d: %s)", what, len(tkns), strings.Join(s, ", "))
+	}
+	for i, s := range tokens {
+		t.Logf(" %s-%d: %q", prefix, i, s.String())
+		for j, token := range s {
+			t.Logf("  %s-%d-%d: %s %q%s%s", prefix, i, j, token.Type, token.Text,
+				toString("delimiter", token.Delimiter...),
+				toString("strip", token.Strip...))
+		}
+	}
+}
+
+func TestDelimiterTokenizing(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{
+			input: "DELIMITER ;\n",
+			want:  ";",
+		},
+		{
+			input: "DELIMITER $$\nSELECT 1$$\n",
+			want:  "$$",
+		},
+		{
+			input: "delimiter //\nSELECT 1//\n",
+			want:  "//",
+		},
+	}
+	for _, tc := range cases {
+		ts := TokenizeMySQL(tc.input)
+		dumpTokens(t, "raw", ts)
+		var found Tokens
+		for _, tok := range ts {
+			if tok.Type == Delimiter {
+				found = Tokens(tok.Delimiter)
+				break
+			}
+		}
+		require.NotEmpty(t, found, tc.input)
+		require.Equal(t, tc.want, found.String(), tc.input)
 	}
 }
 

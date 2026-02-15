@@ -2,6 +2,7 @@ package sqltoken
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -27,12 +28,23 @@ const (
 	Semicolon
 	Punctuation
 	Word
-	Other // control characters and other non-printables
+	Other     // control characters and other non-printables
+	Delimiter // used in MySQL
 )
 
 type Token struct {
-	Type TokenType
-	Text string
+	Type      TokenType
+	Text      string
+	Delimiter []Token // only set when Type == Delimiter
+	Split     []Token // set on the tail token when tokens are Split
+	Strip     []Token // what became this token (includes self) during Strip, if 1:1, empty
+}
+
+func (t Token) Copy() Token {
+	t.Delimiter = copySlice(t.Delimiter)
+	t.Split = copySlice(t.Split)
+	t.Strip = copySlice(t.Strip)
+	return t
 }
 
 // Config specifies the behavior of Tokenize as relates to behavior
@@ -88,6 +100,9 @@ type Config struct {
 
 	// SeparatePunctuation prevents merging successive punctuation into a single token
 	SeparatePunctuation bool
+
+	// NoticeDelimiter DELIMITER END;
+	NoticeDelimiter bool
 }
 
 // WithNoticeQuestionMark enables paring question marks using the QuestionMark token
@@ -192,6 +207,11 @@ func (c Config) WithSeparatePunctuation() Config {
 	return c
 }
 
+func (c Config) WithNoticeDelimiter() Config {
+	c.NoticeDelimiter = true
+	return c
+}
+
 func (c Config) combineOkay(t TokenType) bool {
 	// nolint:exhaustive
 	switch t {
@@ -205,7 +225,29 @@ func (c Config) combineOkay(t TokenType) bool {
 
 type Tokens []Token
 
+func (ts Tokens) Copy() Tokens {
+	if ts == nil {
+		return nil
+	}
+	n := make(Tokens, len(ts))
+	for i, t := range ts {
+		n[i] = t.Copy()
+	}
+	return n
+}
+
 type TokensList []Tokens
+
+func (tl TokensList) Copy() TokensList {
+	if tl == nil {
+		return nil
+	}
+	n := make(TokensList, len(tl))
+	for i, ts := range tl {
+		n[i] = ts.Copy()
+	}
+	return n
+}
 
 // OracleConfig returns a parsing configuration that is appropriate
 // for parsing Oracle's SQL
@@ -237,7 +279,8 @@ func MySQLConfig() Config {
 		WithNoticeHashComment().
 		WithNoticeHexNumbers().
 		WithNoticeBinaryNumbers().
-		WithNoticeCharsetLiteral()
+		WithNoticeCharsetLiteral().
+		WithNoticeDelimiter()
 }
 
 // PostgreSQL returns a parsing configuration that is appropriate
@@ -275,6 +318,8 @@ func Tokenize(s string, config Config) Tokens {
 	var firstDollarEnd int
 	var runeDelim rune
 	var charDelim byte
+	delimiterStart := -1
+	var foundWhitespaceAfterDelimiterStart bool
 
 	// Why is this written with Goto you might ask?  It's written
 	// with goto because RE2 can't handle complex regex and PCRE
@@ -297,6 +342,23 @@ func Tokenize(s string, config Config) Tokens {
 				Type: t,
 				Text: s[tokenStart:i],
 			})
+		}
+		if config.NoticeDelimiter {
+			t := tokens[len(tokens)-1]
+			switch {
+			case t.Type == Word && strings.ToLower(t.Text) == "delimiter":
+				delimiterStart = len(tokens) - 1
+				foundWhitespaceAfterDelimiterStart = false
+			case len(tokens)-2 == delimiterStart && t.Type == Whitespace && !strings.ContainsRune(t.Text, '\n'):
+				foundWhitespaceAfterDelimiterStart = true
+			case foundWhitespaceAfterDelimiterStart && t.Type == Whitespace:
+				if len(tokens)-2 > delimiterStart && strings.ContainsRune(t.Text, '\n') {
+					tokens[delimiterStart].Type = Delimiter
+					tokens[delimiterStart].Delimiter = tokens[delimiterStart+2 : len(tokens)-1]
+				}
+				delimiterStart = -1
+				foundWhitespaceAfterDelimiterStart = false
+			}
 		}
 		tokenStart = i
 	}
@@ -1256,8 +1318,13 @@ func (ts Tokens) String() string {
 
 // Strip removes leading/trailing whitespace and semicolors
 // and strips all internal comments.  Internal whitespace
-// is changed to a single space.
+// is changed to a single space. Strip is not reversiable if there
+// is no command present (all whitespace and/or comment).
 func (ts Tokens) Strip() Tokens {
+	if len(ts) == 0 {
+		return ts
+	}
+	delimiter := ts[0].Delimiter
 	i := 0
 	for i < len(ts) {
 		// nolint:exhaustive
@@ -1268,58 +1335,189 @@ func (ts Tokens) Strip() Tokens {
 		}
 		break
 	}
+	skipped := i
 	c := make(Tokens, 0, len(ts))
+	captureSkip := func() {
+		if skipped == 0 {
+			return
+		}
+		t := c[len(c)-1].Copy()
+		t.Strip = ts[i-skipped : i+1] // includes self
+		if len(t.Strip) != 1 || t.Strip[0].Text != ts[i].Text {
+			// only override if something is different
+			c[len(c)-1] = t
+		}
+		skipped = 0
+	}
 	var lastReal int
 	for ; i < len(ts); i++ {
 		// nolint:exhaustive
+	Top:
+		if delimiter != nil && len(ts)-1-i >= len(delimiter) {
+			for j, dt := range delimiter {
+				if dt.Text != ts[i+j].Text {
+					goto NotDelimiter
+				}
+			}
+			c = append(c, ts[i:i+len(delimiter)]...)
+			// log.Printf("XXX DELIMITER\n")
+			i += len(delimiter)
+			skipped += len(delimiter)
+			goto Top
+		}
+	NotDelimiter:
+
+		// log.Printf("XXX SWITCH %s: %q\n", ts[i].Type, ts[i].Text)
 		switch ts[i].Type {
+		/* XXX
+		case Delimiter:
+			c = append(c, ts[i])
+			c = append(c, ts[i+1])
+			c = append(c, ts[i].Delimiter...)
+			i += len(ts[i].Delimiter) + 1
+			lastReal = len(c)
+		*/
 		case Comment:
 			continue
 		case Whitespace:
-			c = append(c, Token{
-				Type: Whitespace,
-				Text: " ",
-			})
+			for ; i+1 < len(ts) && ts[i+1].Type == Whitespace; i++ {
+				log.Printf("XXX WHITE\n")
+				skipped++
+			}
+			if ts[i].Text != " " {
+				skipped++
+				c = append(c, Token{
+					Type: Whitespace,
+					Text: " ",
+				})
+			} else {
+				c = append(c, ts[i])
+			}
+			captureSkip()
 		case Semicolon:
 			c = append(c, ts[i])
+			if delimiter != nil {
+				lastReal = len(c)
+			}
+			captureSkip()
 		default:
 			c = append(c, ts[i])
+			captureSkip()
 			lastReal = len(c)
 		}
 	}
-	c = c[:lastReal]
+	if lastReal < len(c) {
+		t := c[lastReal].Copy()
+		if t.Strip == nil {
+			t.Strip = append(t.Strip, c[lastReal:]...)
+		} else {
+			// +1 because c[lastReal] is already in t.Strip
+			t.Strip = append(t.Strip, c[lastReal+1:]...)
+		}
+		c[lastReal] = t
+		c = c[:lastReal]
+	}
 	return c
 }
 
+// Unstrip reverses a Strip
+func (ts Tokens) Unstrip() Tokens {
+	n := make([]Token, 0, len(ts))
+	for _, token := range ts {
+		if token.Strip != nil {
+			n = append(n, token.Strip...)
+		} else {
+			n = append(n, token)
+		}
+	}
+	return Tokens(n)
+}
+
 // CmdSplit breaks up the token array into multiple token arrays,
-// one per command (splitting on ";") and Strip()ing each of the
-// returned Tokens.
+// one per command (splitting on ";" or on the delimiter if there
+// is a delimiter set) and Strip()ing each of the returned Tokens.
+//
+// Delimiter commands become an annotation on each command (in the first
+// token) that has a special delimiter (rather than being a stand-alone command)
 func (ts Tokens) CmdSplit() TokensList {
 	r := ts.CmdSplitUnstripped()
-	for i, t := range r {
-		r[i] = t.Strip()
+	stripped := make(TokensList, 0, len(r))
+	for _, t := range r {
+		s := t.Strip()
+		if len(s) > 0 {
+			stripped = append(stripped, s)
+		}
 	}
-	return r
+	return stripped
 }
 
 // CmdSplitUnstripped breaks up the token array into multiple token arrays,
 // one per command (splitting on ";"). It does not Strip() the commands.
+// Empty (just comments/whitespace) commands are eliminated and
+// are not recoverable with Join().
+//
+// Delimiter commands become an annotation on each command (in the first
+// token) that has a special delimiter (rather than being a stand-alone command)
 func (ts Tokens) CmdSplitUnstripped() TokensList {
 	var r TokensList
 	start := 0
+	var delimiter Tokens
+	var queuedDelimiter Tokens
+OuterLoop:
 	for i, t := range ts {
-		if t.Type == Semicolon {
-			r = append(r, Tokens(ts[start:i]))
+		var add Tokens
+		var split []Token
+		switch {
+		case t.Type == Delimiter:
+			// We know we can expect space delimiter newline next
+			queuedDelimiter = t.Delimiter
+			continue
+		case queuedDelimiter != nil && t.Type == Whitespace && strings.ContainsRune(t.Text, '\n'):
+			delimiter = queuedDelimiter
+			if len(delimiter) == 1 && delimiter[0].Type == Semicolon {
+				delimiter = nil
+			}
+			queuedDelimiter = nil
+			start = i + 1
+			continue
+		case queuedDelimiter != nil:
+			continue
+		case delimiter != nil:
+			// we're looking for the delimiter
+			if len(ts)-1-i < len(delimiter) {
+				continue
+			}
+			for j, dt := range delimiter {
+				if dt.Text != ts[i+j].Text {
+					continue OuterLoop
+				}
+			}
+			split = ts[i : i+len(delimiter)]
+			add = Tokens(ts[start:i])
+			start = i + len(delimiter)
+		case t.Type == Semicolon:
+			split = Tokens{t}
+			add = Tokens(ts[start:i])
 			start = i + 1
 		}
+		if l := len(add); l > 0 {
+			safe := make(Tokens, len(add))
+			copy(safe, add)
+			safe[0] = add[0].Copy()
+			safe[0].Delimiter = delimiter
+			safe[l-1] = add[l-1].Copy()
+			safe[l-1].Split = split
+			r = append(r, safe)
+		}
 	}
+	log.Println("XXX end split", start, len(ts))
 	if start < len(ts) {
 		r = append(r, Tokens(ts[start:]))
 	}
 	return r
 }
 
-// Strings returns exactly the original text of each Tokens (except the semicolons)
+// Strings returns almost exactly the original text of each Tokens (except the semicolons)
 // unless Strip() or CmdSplit() was called.
 func (tl TokensList) Strings() []string {
 	r := make([]string, 0, len(tl))
@@ -1332,12 +1530,7 @@ func (tl TokensList) Strings() []string {
 	return r
 }
 
-var semiToken = Token{
-	Type: Semicolon,
-	Text: ";",
-}
-
-// Join reverses Split: adding ; between the token lists
+// Join reverses Split: adding back delimiters between the token lists
 func (tl TokensList) Join() Tokens {
 	tl = list.FilterEmptySlices(tl)
 	if len(tl) == 0 {
@@ -1348,12 +1541,22 @@ func (tl TokensList) Join() Tokens {
 		l += len(tokens)
 	}
 	l += len(tl) - 1
-	rejoined := make(Tokens, 0, l)
-	for i, tokens := range tl {
-		if i > 0 {
-			rejoined = append(rejoined, semiToken)
-		}
+	rejoined := make(Tokens, 0, l+len(tl)*2)
+	for _, tokens := range tl {
 		rejoined = append(rejoined, tokens...)
+		last := tokens[len(tokens)-1]
+		if last.Split != nil {
+			rejoined = append(rejoined, last.Split...)
+		}
 	}
 	return rejoined
+}
+
+func copySlice[E any](s []E) []E {
+	if s == nil {
+		return nil
+	}
+	n := make([]E, len(s))
+	copy(n, s)
+	return n
 }
