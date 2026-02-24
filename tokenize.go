@@ -59,6 +59,10 @@ type Config struct {
 	// NoticeHexValues 0xa0 x'af' X'AF' (MySQL)
 	NoticeHexNumbers bool
 
+	// NoticeLiteralBackslashEscape 'escape \' quote' (MySQL by default,
+	// PostgreSQL optional).
+	NoticeLiteralBackslashEscape bool
+
 	// NoticeBinaryValues 0x01 b'01' B'01' (MySQL)
 	NoticeBinaryNumbers bool
 
@@ -129,6 +133,13 @@ func (c Config) WithNoticeDollarQuotes() Config {
 // WithNoticeHexNumbers enables quoted hex number parsing (x'af') using the HexNumber token (MySQL)
 func (c Config) WithNoticeHexNumbers() Config {
 	c.NoticeHexNumbers = true
+	return c
+}
+
+// WithNoticeLiteralBackslashEscape enables 'escape \' quote' (MySQL by default,
+// PostgreSQL optional).
+func (c Config) WithNoticeLiteralBackslashEscape() Config {
+	c.NoticeLiteralBackslashEscape = true
 	return c
 }
 
@@ -237,7 +248,8 @@ func MySQLConfig() Config {
 		WithNoticeHashComment().
 		WithNoticeHexNumbers().
 		WithNoticeBinaryNumbers().
-		WithNoticeCharsetLiteral()
+		WithNoticeCharsetLiteral().
+		WithNoticeLiteralBackslashEscape()
 }
 
 // PostgreSQL returns a parsing configuration that is appropriate
@@ -473,11 +485,11 @@ SingleQuoteString:
 	for i < len(s) {
 		c := s[i]
 		i++
-		switch c {
-		case '\'':
+		switch {
+		case c == '\'':
 			token(Literal)
 			goto BaseState
-		case '\\':
+		case config.NoticeLiteralBackslashEscape && c == '\\':
 			if i < len(s) {
 				i++
 			} else {
