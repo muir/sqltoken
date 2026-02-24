@@ -75,6 +75,9 @@ type Config struct {
 	// NoticeNotionalStrings [nN]'...''...' (Oracle, SQL Server)
 	NoticeNotionalStrings bool
 
+	// NoticeEscapedStrings [eE]'...' (PostgreSQL)
+	NoticeEscapedStrings bool
+
 	// NoticeDelimitedStrings [nN]?[qQ]'DELIM .... DELIM' (Oracle)
 	NoticeDeliminatedStrings bool
 
@@ -164,6 +167,12 @@ func (c Config) WithNoticeCharsetLiteral() Config {
 // WithNoticeNotionalStrings enables notional string parsing (n'string') using the Literal token (Oracle, SQL Server)
 func (c Config) WithNoticeNotionalStrings() Config {
 	c.NoticeNotionalStrings = true
+	return c
+}
+
+// WithNoticeEscapedStrings enables escaped string parsing (E'string') using the Literal token (PostgreSQL)
+func (c Config) WithNoticeEscapedStrings() Config {
+	c.NoticeEscapedStrings = true
 	return c
 }
 
@@ -258,7 +267,8 @@ func PostgreSQLConfig() Config {
 	return Config{}.
 		WithNoticeDollarNumber().
 		WithNoticeDollarQuotes().
-		WithNoticeUAmpPrefix()
+		WithNoticeUAmpPrefix().
+		WithNoticeEscapedStrings()
 }
 
 // TokenizeMySQL breaks up MySQL / MariaDB / SingleStore SQL strings into
@@ -324,6 +334,9 @@ BaseState:
 			}
 			token(Punctuation)
 		case '\'':
+			if config.NoticeLiteralBackslashEscape {
+				goto EscapedSingleQuoteString
+			}
 			goto SingleQuoteString
 		case '"':
 			goto DoubleQuoteString
@@ -410,15 +423,23 @@ BaseState:
 				}
 			}
 			goto Word
+		case 'e', 'E':
+			if config.NoticeEscapedStrings && i < len(s)-1 {
+				if s[i] == '\'' {
+					i++
+					goto EscapedSingleQuoteString
+				}
+			}
+			goto Word
 		case 'q', 'Q':
 			if config.NoticeDeliminatedStrings && i < len(s) && s[i] == '\'' {
 				i++
 				goto DeliminatedString
 			}
 			goto Word
-		case 'a' /*b*/, 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+		case 'a' /*b*/, 'c', 'd' /*'e'*/, 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
 			/*n*/ 'o', 'p' /*q*/, 'r', 's', 't', 'u', 'v', 'w' /*x*/, 'y', 'z',
-			'A' /*B*/, 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+			'A' /*B*/, 'C', 'D' /*'E'*/, 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
 			/*N*/ 'O', 'P' /*Q*/, 'R', 'S', 'T' /*U*/, 'V', 'W' /*X*/, 'Y', 'Z',
 			'_':
 			// This covers the entire alphabet except specific letters that have
@@ -485,11 +506,23 @@ SingleQuoteString:
 	for i < len(s) {
 		c := s[i]
 		i++
-		switch {
-		case c == '\'':
+		if c == '\'' {
 			token(Literal)
 			goto BaseState
-		case config.NoticeLiteralBackslashEscape && c == '\\':
+		}
+	}
+	token(Literal)
+	goto Done
+
+EscapedSingleQuoteString:
+	for i < len(s) {
+		c := s[i]
+		i++
+		switch c {
+		case '\'':
+			token(Literal)
+			goto BaseState
+		case '\\':
 			if i < len(s) {
 				i++
 			} else {

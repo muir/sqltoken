@@ -835,6 +835,24 @@ var postgreSQLCases = []Tokens{
 		{Type: Word, Text: "_foo"},
 		{Type: Whitespace, Text: " "},
 	},
+	{
+		{Type: Word, Text: "p32"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "E'martha''s family'"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "p33"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "E'martha\\'s family'"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "p34"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "E'back \\ slash'"},
+		{Type: Whitespace, Text: " "},
+	},
 }
 
 var oracleCases = []Tokens{
