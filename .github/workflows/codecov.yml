@@ -1,6 +1,10 @@
 name: Test and coverage
 
-on: [push]
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ "**" ]
 
 jobs:
   build:
