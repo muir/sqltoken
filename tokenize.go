@@ -14,35 +14,32 @@ import (
 type TokenType int
 
 const (
-	Comment TokenType = iota
-	Whitespace
-	QuestionMark // used in MySQL substitution
-	AtSign       // used in sqlserver substitution
-	DollarNumber // used in PostgreSQL substitution
-	ColonWord    // used in sqlx substitution
-	Literal      // strings
-	Identifier   // used in SQL Server for many things
-	AtWord       // used in SQL Server, subset of Identifier
-	Number
-	Semicolon
-	Punctuation
-	Word
-	Other     // control characters and other non-printables
-	Delimiter // used in MySQL
+	Comment            TokenType = iota // 0
+	Whitespace                          // 1
+	QuestionMark                        // 2, used in MySQL substitution
+	AtSign                              // 3, used in sqlserver substitution
+	DollarNumber                        // 4, used in PostgreSQL substitution
+	ColonWord                           // 5, used in sqlx substitution
+	Literal                             // 6, strings
+	Identifier                          // 7, used in SQL Server for many things
+	AtWord                              // 8, used in SQL Server, subset of Identifier
+	Number                              // 9
+	Delimiter                           // 10, semicolon except for MySQL when DELIMITER is used
+	Punctuation                         // 11
+	Word                                // 12
+	Other                               // 13, control characters and other non-printables
+	DelimiterStatement                  // 14, DELIMITER command - MySQL only
 )
+
+const Semicolon = Delimiter // Deprecated: for backwards compatibility only
 
 type Token struct {
 	Type TokenType
 	Text string
-	// Delimiter is set when Type == Delimiter
-	// And after CmdSplit/CmdStripUnstripped on the first token of each
-	// command when there is a delimiter other than ;
-	// Do not set manually.
-	Delimiter Tokens
 	// Split is set on the last token in a Tokens after CmdSplit/CmdSplitUnstripped
 	// to capture the ; discarded by splitting.
 	// Do not set manually.
-	Split Tokens
+	Split *Token
 	// Strip captures what was before when you Strip() a tokens. It can be set on
 	// any Token and it includes the Token itself
 	// Do not set manually.
@@ -50,8 +47,6 @@ type Token struct {
 }
 
 func (t Token) Copy() Token {
-	t.Delimiter = copySlice(t.Delimiter)
-	t.Split = copySlice(t.Split)
 	t.Strip = copySlice(t.Strip)
 	return t
 }
@@ -321,14 +316,16 @@ func Tokenize(s string, config Config) Tokens {
 	if len(s) == 0 {
 		return []Token{}
 	}
+	stop := len(s)
 	tokens := make([]Token, 0, len(s)/5)
 	tokenStart := 0
 	var i int
 	var firstDollarEnd int
 	var runeDelim rune
 	var charDelim byte
-	delimiterStart := -1
-	var foundWhitespaceAfterDelimiterStart bool
+	var endDelimiterWord int
+	var delimiterBuffer string
+	var delimiter string
 
 	// Why is this written with Goto you might ask?  It's written
 	// with goto because RE2 can't handle complex regex and PCRE
@@ -352,28 +349,11 @@ func Tokenize(s string, config Config) Tokens {
 				Text: s[tokenStart:i],
 			})
 		}
-		if config.NoticeDelimiter {
-			t := tokens[len(tokens)-1]
-			switch {
-			case t.Type == Word && strings.ToLower(t.Text) == "delimiter":
-				delimiterStart = len(tokens) - 1
-				foundWhitespaceAfterDelimiterStart = false
-			case delimiterStart >= 0 && len(tokens)-2 == delimiterStart && t.Type == Whitespace && !strings.ContainsRune(t.Text, '\n'):
-				foundWhitespaceAfterDelimiterStart = true
-			case foundWhitespaceAfterDelimiterStart && t.Type == Whitespace:
-				if len(tokens)-2 > delimiterStart && strings.ContainsRune(t.Text, '\n') {
-					tokens[delimiterStart].Type = Delimiter
-					tokens[delimiterStart].Delimiter = tokens[delimiterStart+2 : len(tokens)-1]
-				}
-				delimiterStart = -1
-				foundWhitespaceAfterDelimiterStart = false
-			}
-		}
 		tokenStart = i
 	}
 
 BaseState:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		i++
 		switch c {
@@ -387,7 +367,7 @@ BaseState:
 		case '"':
 			goto DoubleQuoteString
 		case '-':
-			if i < len(s) && s[i] == '-' {
+			if i < stop && s[i] == '-' {
 				goto SkipToEOL
 			}
 			token(Punctuation)
@@ -437,29 +417,29 @@ BaseState:
 			token(Punctuation)
 		case 'U':
 			// U&'d\0061t\+000061'
-			if config.NoticeUAmpPrefix && i+1 < len(s) && s[i] == '&' && s[i+1] == '\'' {
+			if config.NoticeUAmpPrefix && i+1 < stop && s[i] == '&' && s[i+1] == '\'' {
 				i += 2
 				goto SingleQuoteString
 			}
 			goto Word
 		case 'x', 'X':
 			// X'1f' x'1f'
-			if config.NoticeHexNumbers && i < len(s) && s[i] == '\'' {
+			if config.NoticeHexNumbers && i < stop && s[i] == '\'' {
 				i++
 				goto QuotedHexNumber
 			}
 			goto Word
 		case 'b', 'B':
-			if config.NoticeBinaryNumbers && i < len(s) && s[i] == '\'' {
+			if config.NoticeBinaryNumbers && i < stop && s[i] == '\'' {
 				i++
 				goto QuotedBinaryNumber
 			}
 			goto Word
 		case 'n', 'N':
-			if config.NoticeNotionalStrings && i < len(s)-1 {
+			if config.NoticeNotionalStrings && i < stop-1 {
 				switch s[i] {
 				case 'q', 'Q':
-					if config.NoticeDeliminatedStrings && i < len(s)-2 && s[i+1] == '\'' {
+					if config.NoticeDeliminatedStrings && i < stop-2 && s[i+1] == '\'' {
 						i += 2
 						goto DeliminatedString
 					}
@@ -470,7 +450,7 @@ BaseState:
 			}
 			goto Word
 		case 'q', 'Q':
-			if config.NoticeDeliminatedStrings && i < len(s) && s[i] == '\'' {
+			if config.NoticeDeliminatedStrings && i < stop && s[i] == '\'' {
 				i++
 				goto DeliminatedString
 			}
@@ -486,11 +466,11 @@ BaseState:
 			// by unicode.IsLetter()
 			goto Word
 		case '0':
-			if config.NoticeHexNumbers && i < len(s) && s[i] == 'x' {
+			if config.NoticeHexNumbers && i < stop && s[i] == 'x' {
 				i++
 				goto HexNumber
 			}
-			if config.NoticeBinaryNumbers && i < len(s) && s[i] == 'b' {
+			if config.NoticeBinaryNumbers && i < stop && s[i] == 'b' {
 				i++
 				goto BinaryNumber
 			}
@@ -525,12 +505,12 @@ BaseState:
 	goto Done
 
 CStyleComment:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		i++
 		switch c {
 		case '*':
-			if i < len(s) && s[i] == '/' {
+			if i < stop && s[i] == '/' {
 				i++
 				token(Comment)
 				goto BaseState
@@ -541,7 +521,7 @@ CStyleComment:
 	goto Done
 
 SingleQuoteString:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		i++
 		switch c {
@@ -549,7 +529,7 @@ SingleQuoteString:
 			token(Literal)
 			goto BaseState
 		case '\\':
-			if i < len(s) {
+			if i < stop {
 				i++
 			} else {
 				token(Literal)
@@ -561,7 +541,7 @@ SingleQuoteString:
 	goto Done
 
 DoubleQuoteString:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		i++
 		switch c {
@@ -569,7 +549,7 @@ DoubleQuoteString:
 			token(Literal)
 			goto BaseState
 		case '\\':
-			if i < len(s) {
+			if i < stop {
 				i++
 			} else {
 				token(Literal)
@@ -581,7 +561,7 @@ DoubleQuoteString:
 	goto Done
 
 SkipToEOL:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		i++
 		switch c {
@@ -594,7 +574,7 @@ SkipToEOL:
 	goto Done
 
 Word:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		switch c {
 		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -615,7 +595,13 @@ Word:
 			}
 			token(Word)
 			goto BaseState
-		case '\n', '\r', '\t', '\b', '\v', '\f', ' ',
+		case ' ', '\t':
+			if config.NoticeDelimiter && strings.EqualFold(s[tokenStart:i], "delimiter") {
+				goto DelimiterStatementStart
+			}
+			token(Word)
+			goto BaseState
+		case '\n', '\r', '\b', '\v', '\f',
 			'!', '"' /*#*/ /*$*/, '%', '&' /*'*/, '(', ')', '*', '+', '-', '.', '/',
 			':', ';', '<', '=', '>', '?', /*@*/
 			'[', '\\', ']', '^' /*_*/, '`',
@@ -648,14 +634,279 @@ Word:
 	token(Word)
 	goto Done
 
+DelimiterStatementStart:
+	// we may have to backtrack
+	endDelimiterWord = i
+	delimiterBuffer = ""
+
+	for i < stop { // len(c) ? XXX
+		c := s[i]
+		switch c {
+		case ' ', '\t', '\r', '\b', '\v', '\f':
+			i++
+		case '\n':
+			// invaliad delimiter command: backtrack
+			goto NotDelimiter
+		case '\'':
+			i++
+			goto DelimiterSingleQuote
+		case '"':
+			i++
+			goto DelimiterDoubleQuote
+		default:
+			goto DelimiterUnquoted
+		}
+	}
+	// fallthrough
+
+NotDelimiter:
+	i = endDelimiterWord
+	token(Word)
+	goto BaseState
+
+DelimiterContinues:
+	for i < stop { // len(c) ? XXX
+		c := s[i]
+		switch c {
+		case ' ', '\t', '\r', '\b', '\v', '\f':
+			i++
+		case '\n':
+			i++
+			goto DelimiterFound
+		case '\'':
+			i++
+			goto DelimiterSingleQuote
+		case '"':
+			i++
+			goto DelimiterDoubleQuote
+		default:
+			goto DelimiterIgnoring
+		}
+	}
+
+DelimiterSingleQuote:
+	{
+		delimiterStart := i
+		for i < stop { // len(c)? XXX
+			c := s[i]
+			switch c {
+			case '\\', '\n':
+				// invalid
+				goto NotDelimiter
+			case '\'':
+				if i+1 < stop {
+					switch s[i+1] {
+					case '\'':
+						// '' inside ' quoted string
+						i++
+						delimiterBuffer += s[delimiterStart:i]
+						i++
+						delimiterStart = i
+						continue
+					case ' ', '\t', '\b':
+						delimiterBuffer += s[delimiterStart:i]
+						i++
+						goto DelimiterContinues
+					case '\n':
+						delimiterBuffer += s[delimiterStart:i]
+						i += 2
+						goto DelimiterFound
+					}
+				}
+				delimiterBuffer += s[delimiterStart:i]
+				i++
+				goto DelimiterContinues
+			default:
+				i++
+			}
+		}
+		goto NotDelimiter
+	}
+
+DelimiterDoubleQuote:
+	{
+		delimiterStart := i
+		for i < stop { // len(c)? XXX
+			c := s[i]
+			switch c {
+			case '\\', '\n':
+				// invalid
+				goto NotDelimiter
+			case '"':
+				if i+1 < stop {
+					switch s[i+1] {
+					case '"':
+						// "" inside " quoted string
+						i++
+						delimiterBuffer += s[delimiterStart:i]
+						i++
+						delimiterStart = i
+						continue
+					case ' ', '\t', '\b':
+						delimiterBuffer += s[delimiterStart:i]
+						i++
+						goto DelimiterContinues
+					case '\n':
+						delimiterBuffer += s[delimiterStart:i]
+						i += 2
+						goto DelimiterFound
+					}
+				}
+				delimiterBuffer += s[delimiterStart:i]
+				i++
+				goto DelimiterContinues
+			default:
+				i++
+			}
+		}
+		goto NotDelimiter
+	}
+
+DelimiterUnquoted:
+	{
+		delimiterStart := i
+		for i < stop { // len(c)? XXX
+			c := s[i]
+			switch c {
+			case '\\':
+				// invalid
+				goto NotDelimiter
+			case '\n':
+				delimiterBuffer = s[delimiterStart:i]
+				i++
+				goto DelimiterFound
+			case ' ', '\t', '\b', '\r':
+				delimiterBuffer = s[delimiterStart:i]
+				i++
+				goto DelimiterIgnoring
+			default:
+				i++
+			}
+		}
+		goto NotDelimiter
+	}
+
+DelimiterIgnoring:
+	{
+		for i < stop { // len(c)? XXX
+			c := s[i]
+			switch c {
+			case '\n':
+				i++
+				goto DelimiterFound
+			default:
+				i++
+			}
+		}
+		goto NotDelimiter
+	}
+
+DelimiterFound:
+	delimiter = delimiterBuffer
+	token(DelimiterStatement)
+
+	// fallthrough
+
+DelimiterSearchStart:
+	{
+		restoreI := i
+		if delimiter == "" {
+			stop = len(s)
+			goto BaseState
+		}
+		end := len(s) - len(delimiter)
+		for i < end {
+			if strings.HasPrefix(s[i:], delimiter) {
+				stop = i
+				i = restoreI
+				goto BaseState
+			}
+			c := s[i]
+			i++
+			switch c {
+			case 'E', 'e':
+				if i < len(s) && s[i] == '\'' {
+					i++
+				EQuotedString:
+					for i < end {
+						c = s[i]
+						i++
+						switch c {
+						case '\\':
+							if i+1 < len(s) {
+								// skip one
+								i++
+							} else {
+								break EQuotedString
+							}
+						case '\'':
+							break EQuotedString
+						}
+					}
+				}
+			case '\'':
+			SingleQuotedString:
+				for i < end {
+					c = s[i]
+					i++
+					switch c {
+					case '\'':
+						if s[i] == '\'' {
+							i++
+						} else {
+							break SingleQuotedString
+						}
+					}
+				}
+			case '"':
+			DoubleQuotedString:
+				for i < end {
+					c = s[i]
+					i++
+					switch c {
+					case '"':
+						if s[i] == '"' {
+							i++
+						} else {
+							break DoubleQuotedString
+						}
+					}
+				}
+			case '/':
+				if i < len(s) && s[i] == '*' {
+					i++
+					for ; i+1 < len(s); i++ {
+						if s[i] == '*' && s[i+1] == '/' {
+							i++
+							break
+						}
+					}
+				}
+			case '-':
+				if i < len(s) && s[i] == '-' {
+					i++
+					for ; i < len(s); i++ {
+						if s[i] == '\n' {
+							break
+						}
+					}
+				}
+			}
+		}
+
+		stop = len(s)
+		i = restoreI
+		goto BaseState
+	}
+
 ColonWordStart:
-	if i < len(s) {
+	if i < stop {
 		c := s[i]
 		switch c {
 		case ':':
 			// ::word is :: word, not : :word
 			i++
-			for i < len(s) && s[i] == ':' {
+			for i < stop && s[i] == ':' {
 				i++
 			}
 			token(Punctuation)
@@ -691,7 +942,7 @@ ColonWordStart:
 	goto Done
 
 ColonWord:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		switch c {
 		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -731,7 +982,7 @@ ColonWord:
 	goto Done
 
 Identifier:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		switch c {
 		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -761,7 +1012,7 @@ Identifier:
 	goto Done
 
 AtWordStart:
-	if i < len(s) {
+	if i < stop {
 		c := s[i]
 		switch c {
 		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -784,7 +1035,7 @@ AtWordStart:
 	goto Done
 
 AtWord:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		switch c {
 		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -809,7 +1060,7 @@ AtWord:
 	goto Done
 
 PossibleNumber:
-	if i < len(s) {
+	if i < stop {
 		c := s[i]
 		switch c {
 		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
@@ -843,7 +1094,7 @@ PossibleNumber:
 	goto Done
 
 Number:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		i++
 		switch c {
@@ -852,7 +1103,7 @@ Number:
 		case '.':
 			goto NumberNoDot
 		case 'e', 'E':
-			if i < len(s) {
+			if i < stop {
 				switch s[i] {
 				case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 					i++
@@ -915,14 +1166,14 @@ Number:
 	goto Done
 
 NumberNoDot:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		i++
 		switch c {
 		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			// okay
 		case 'e', 'E':
-			if i < len(s) {
+			if i < stop {
 				switch s[i] {
 				case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 					i++
@@ -965,7 +1216,7 @@ NumberNoDot:
 	goto Done
 
 Exponent:
-	if i < len(s) {
+	if i < stop {
 		c := s[i]
 		i++
 		switch c {
@@ -1005,7 +1256,7 @@ Exponent:
 	goto BaseState
 
 ExponentConfirmed:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		i++
 		switch c {
@@ -1044,7 +1295,7 @@ ExponentConfirmed:
 	goto Done
 
 HexNumber:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		i++
 		switch c {
@@ -1062,7 +1313,7 @@ HexNumber:
 	goto Done
 
 BinaryNumber:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		i++
 		switch c {
@@ -1078,7 +1329,7 @@ BinaryNumber:
 	goto Done
 
 Whitespace:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		i++
 		switch c {
@@ -1111,7 +1362,7 @@ Whitespace:
 	goto Done
 
 QuotedHexNumber:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		i++
 		switch c {
@@ -1132,7 +1383,7 @@ QuotedHexNumber:
 	goto Done
 
 QuotedBinaryNumber:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		i++
 		switch c {
@@ -1157,7 +1408,7 @@ DeliminatedString:
 	// q'XlsXldsaX'
 	// Q'(ls)(Xldsa)'
 	// Nq'(ls)(Xldsa)'
-	if i < len(s) {
+	if i < stop {
 		c := s[i]
 		i++
 		switch c {
@@ -1207,10 +1458,10 @@ DeliminatedString:
 	goto Done
 
 DeliminatedStringCharacter:
-	for i < len(s) {
+	for i < stop {
 		c := s[i]
 		i++
-		if c == charDelim && i < len(s) && s[i] == '\'' {
+		if c == charDelim && i < stop && s[i] == '\'' {
 			i++
 			token(Literal)
 			goto BaseState
@@ -1220,7 +1471,7 @@ DeliminatedStringCharacter:
 	goto Done
 
 DeliminatedStringRune:
-	for i < len(s) {
+	for i < stop {
 		r, w := utf8.DecodeRuneInString(s[i:])
 		i += w
 		if r == runeDelim {
@@ -1236,7 +1487,7 @@ Dollar:
 	// $seq$ stuff $seq$
 	// $$stuff$$
 	firstDollarEnd = i
-	if i < len(s) {
+	if i < stop {
 		c := s[i]
 		if config.NoticeDollarQuotes {
 			if c == '$' {
@@ -1254,7 +1505,7 @@ Dollar:
 			r, w := utf8.DecodeRuneInString(s[i:])
 			if unicode.IsLetter(r) {
 				i += w
-				for i < len(s) {
+				for i < stop {
 					// nolint:govet
 					c := s[i]
 					r, w := utf8.DecodeRuneInString(s[i:])
@@ -1287,7 +1538,7 @@ Dollar:
 			switch c {
 			case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 				i++
-				for i < len(s) {
+				for i < stop {
 					c := s[i]
 					i++
 					switch c {
@@ -1310,6 +1561,19 @@ Dollar:
 	goto Done
 
 Done:
+	if stop < len(s) {
+		if delimiter == "" {
+			panic("empty delmiter")
+		}
+		if i+len(delimiter) < len(s) {
+			if s[i:i+len(delimiter)] == delimiter {
+				i += len(delimiter)
+				token(Delimiter)
+				goto DelimiterSearchStart
+			}
+		}
+
+	}
 	return tokens
 }
 
@@ -1323,15 +1587,6 @@ func (ts Tokens) String() string {
 	for i, t := range ts {
 		strs[i] = t.Text
 	}
-	if ts[0].Type != Delimiter && ts[0].Delimiter != nil {
-		ds := ts[0].Delimiter.String()
-		return "DELIMITER " +
-			ds +
-			"\n" +
-			strings.Join(strs, "") +
-			ds +
-			"\nDELIMITER ;\n"
-	}
 	return strings.Join(strs, "")
 }
 
@@ -1344,16 +1599,12 @@ func (ts Tokens) Strip() Tokens {
 	if len(ts) == 0 {
 		return ts
 	}
-	var delimiter Tokens
-	if ts[0].Type != Delimiter {
-		delimiter = ts[0].Delimiter
-	}
 	i := 0
 	// Initial comments/whitespace/etc are skipped
 	for i < len(ts) {
 		// nolint:exhaustive
 		switch ts[i].Type {
-		case Comment, Whitespace, Semicolon:
+		case Comment, Whitespace, Delimiter:
 			i++
 			continue
 		}
@@ -1380,39 +1631,11 @@ func (ts Tokens) Strip() Tokens {
 	}
 	// lastKeptCapture tracks i as lastReal tracks c
 	var lastKeptCapture int
+	var nonStandardDelimiter bool
 
 	for ; i < len(ts); i++ {
-	Top:
-		// If we have a an alternative delimiter set, we have to check to see if we've just encountered it.
-		if delimiter != nil && delimiterMatches(ts, i, delimiter) {
-			c = append(c, ts[i:i+len(delimiter)]...)
-			i += len(delimiter)
-			captureSkip()
-			goto Top
-		}
-
-		if ts[i].Delimiter != nil && ts[i].Type != Delimiter {
-			delimiter = ts[i].Delimiter
-		}
 		// nolint:exhaustive
 		switch ts[i].Type {
-		case Delimiter:
-			nlIndex := i + 2 + len(ts[i].Delimiter)
-			if delimiterMatches(ts, i+2, ts[i].Delimiter) &&
-				ts[i+1].Type == Whitespace &&
-				len(ts)-1 >= nlIndex &&
-				ts[nlIndex].Type == Whitespace &&
-				ts[nlIndex].Text[0] == '\n' {
-				c = append(c, ts[i])
-				captureSkip()
-				// c = append(c, Token{Type: Other}) // XXX
-				c = append(c, ts[i+1:nlIndex+1]...)
-				lastReal = CSpace(len(c))
-				lastWhitespace = CSpace(len(c))
-				i = nlIndex
-				lastKeptCapture = i + 1
-				lastCapture = i + 1
-			}
 		case Comment:
 			// skip it
 		case Whitespace:
@@ -1430,13 +1653,16 @@ func (ts Tokens) Strip() Tokens {
 				captureSkip()
 				lastWhitespace = CSpace(len(c))
 			}
-		case Semicolon:
+		case Delimiter:
 			c = append(c, ts[i])
-			if delimiter != nil {
+			if nonStandardDelimiter {
 				lastReal = CSpace(len(c))
 				lastKeptCapture = i + 1
 			}
 			captureSkip()
+		case DelimiterStatement:
+			nonStandardDelimiter = delimiterIsSemicolon(ts[i].Text)
+			fallthrough
 		default:
 			c = append(c, ts[i])
 			captureSkip()
@@ -1462,10 +1688,6 @@ func (ts Tokens) Strip() Tokens {
 			token.Split = ts[len(ts)-1].Split
 			c[lastIndex] = token
 			// c = append(c, Token{Type: Number}) // XXX
-		}
-		if delimiter != nil && c[0].Delimiter == nil {
-			c[0] = c[0].Copy()
-			c[0].Delimiter = delimiter
 		}
 	}
 	return c
@@ -1510,79 +1732,138 @@ func (ts Tokens) CmdSplit() TokensList {
 // Empty (just comments/whitespace) commands are eliminated and
 // are not recoverable with Join().
 //
-// DELIMITER commands become an annotation on each command (in the first
-// token) that has a special delimiter (rather than being a stand-alone command).
-// That annotation will turn into bracketing each command with
-// DELIMITER commands thus producing a result that is longer than the
-// original but logically equivelent with each command self-contained.
+// DELIMITER statements will be repeated on each command so that each
+// statement becomes self-contained.
 func (ts Tokens) CmdSplitUnstripped() TokensList {
 	var r TokensList
 	start := 0
-	var delimiter Tokens
-	var queuedDelimiter Tokens
-	capture := func(add Tokens, split []Token) {
-		if l := len(add); l > 0 {
-			safe := add.Copy()
-			//nolint:staticcheck // QF1001 De Morgan's law violation
-			if delimiter != nil && !(len(safe) == 1 && safe[0].Type == Whitespace) {
-				// add the delimiter but not if it's just whitespace
-				safe[0].Delimiter = delimiter
-			}
-			if len(split) != 0 {
-				safe[l-1].Split = Tokens(split)
-			}
-			r = append(r, safe)
-		}
-	}
-OuterLoop:
+	var delimiter string
+	// These variables create a little state machine
+	// that tracks if delimiter wrapping or unwrapping is required
+	var needsWrap bool
+	var needsUnwrap bool
+	var hasDelimiterStatement bool
+	var hasContents bool
 	for i, t := range ts {
-		switch {
-		case t.Type == Delimiter:
-			if delimiter != nil && start < i {
-				// preserve any non-commands that precede the DELIMITER command
-				capture(ts[start:i], nil)
-				start = i
+		switch t.Type {
+		case DelimiterStatement:
+			if delimiterIsSemicolon(t.Text) {
+				needsUnwrap = false // we've just unwrapped
+				delimiter = ""
+			} else {
+				delimiter = t.Text
+				needsUnwrap = true
+				hasDelimiterStatement = true
 			}
-			// We know we can expect space delimiter newline next
-			queuedDelimiter = t.Delimiter
-			continue
-		case queuedDelimiter != nil && t.Type == Whitespace && strings.ContainsRune(t.Text, '\n'):
-			delimiter = queuedDelimiter
-			if len(delimiter) == 1 && delimiter[0].Type == Semicolon {
-				delimiter = nil
-			}
-			queuedDelimiter = nil
+		case Delimiter:
+			r = append(r, wrapIfNeeded(hasContents, needsWrap, needsUnwrap, ts[start:i], delimiter, &t))
 			start = i + 1
-			continue
-		case queuedDelimiter != nil:
-			continue
-		case delimiter != nil:
-			if !delimiterMatches(ts, i, delimiter) {
-				continue OuterLoop
+			hasDelimiterStatement = false
+			needsWrap = false
+			needsUnwrap = delimiter != "" // we'll need unwrap on the next statement
+			hasContents = false
+		case Whitespace, Comment:
+			// nothing
+		default:
+			if delimiter != "" && !hasDelimiterStatement {
+				needsWrap = true
 			}
-			capture(ts[start:i], ts[i:i+len(delimiter)])
-			start = i + len(delimiter)
-		case t.Type == Semicolon:
-			capture(ts[start:i], []Token{t})
-			start = i + 1
+			hasContents = true
 		}
 	}
 	if start < len(ts) {
-		capture(Tokens(ts[start:]), nil)
+		r = append(r, wrapIfNeeded(hasContents, needsWrap, needsUnwrap, ts[start:], delimiter, nil))
 	}
 	return r
 }
 
-func delimiterMatches(ts Tokens, i int, delimiter Tokens) bool {
-	if len(ts)-1-i < len(delimiter) {
+func wrapIfNeeded(hasContents, needsWrap bool, needsUnwrap bool, ts []Token, delimiter string, t *Token) Tokens {
+	lastIndex := len(ts) - 1
+	if lastIndex == -1 {
+		return Tokens{}
+	}
+	if !needsWrap && !needsUnwrap && t == nil {
+		return Tokens(ts)
+	}
+	n := make([]Token, 0, len(ts)+2)
+	if needsWrap {
+		n = append(n, Token{
+			Type: DelimiterStatement,
+			Text: "DELIMITER " + delimiter + "\n",
+		})
+	}
+	if t != nil && delimiter != "" {
+		n = append(n, ts[:lastIndex]...)
+		last := ts[lastIndex].Copy()
+		last.Split = t
+		n = append(n, last)
+	}
+	if needsUnwrap {
+		n = append(n, Token{
+			Type: DelimiterStatement,
+			Text: "DELIMITER ;\n",
+		})
+	}
+	return Tokens(n)
+}
+
+func wrapIfNeededXXX(hasContents, needsWrap bool, needsUnwrap bool, ts []Token, delimiter string, t *Token) Tokens {
+	lastIndex := len(ts) - 1
+	if lastIndex == -1 {
+		return Tokens{}
+	}
+	withSplit := func(in []Token) []Token {
+		if t == nil {
+			return in
+		}
+		out := make([]Token, len(in))
+		copy(out, in)
+		last := out[lastIndex]
+		last.Split = t
+		out[lastIndex] = last
+		return out
+	}
+	if !hasContents {
+		hasDelimiterStatement := false
+		for _, token := range ts {
+			if token.Type == DelimiterStatement {
+				hasDelimiterStatement = true
+				break
+			}
+		}
+		if hasDelimiterStatement {
+			return Tokens{}
+		}
+		return Tokens(withSplit(ts))
+	}
+	if !needsWrap && !needsUnwrap {
+		return Tokens(withSplit(ts))
+	}
+	out := withSplit(ts)
+	n := make([]Token, 0, len(out)+2)
+	if needsWrap {
+		n = append(n, Token{
+			Type: DelimiterStatement,
+			Text: delimiter,
+		})
+	}
+	n = append(n, out...)
+	if needsUnwrap {
+		n = append(n, Token{
+			Type: DelimiterStatement,
+			Text: "DELIMITER ;\n",
+		})
+	}
+	return Tokens(n)
+}
+
+const delimiterFrontLen = len("delimiter") + 1
+
+func delimiterIsSemicolon(statement string) bool {
+	if len(statement) < delimiterFrontLen {
 		return false
 	}
-	for j, dt := range delimiter {
-		if dt.Text != ts[i+j].Text {
-			return false
-		}
-	}
-	return true
+	return strings.TrimSpace(statement[delimiterFrontLen:]) == ";"
 }
 
 // Strings returns almost exactly the original text of each Tokens (except the semicolons)
@@ -1612,131 +1893,21 @@ func (tl TokensList) Join() Tokens {
 		l += len(tokens)
 	}
 	l += len(tl) - 1
-	var delimiter Tokens
-	for i, tokens := range tl {
+	rejoined := make(Tokens, 0, l)
+	for _, tokens := range tl {
+		for _, token := range tokens {
+			token.Split = nil
+			rejoined = append(rejoined, token)
+		}
 		last := tokens[len(tokens)-1]
 		if last.Split != nil {
-			l += len(last.Split)
-		}
-		first := tokens[0]
-		// XXX align with below
-		if first.Delimiter != nil && first.Type != Delimiter {
-			if sameTokens(delimiter, first.Delimiter) {
-				l += len(delimiter)
-			} else {
-				// Delimiter Whitespace <delimiter> Whitespace
-				if len(first.Delimiter) == 1 && first.Delimiter[0].Type == Semicolon {
-					delimiter = nil
-				} else {
-					delimiter = first.Delimiter
-				}
-				l += 3 + len(first.Delimiter)
-				if i > 0 {
-					l++
-				}
-			}
-		} else if delimiter != nil && !(len(tokens) == 1 && tokens[0].Type == Whitespace) { //nolint:staticcheck // QF1001 De Morgan's law violation
-			// If not just whitespace, if there is no
-			// Whitespace Delimiter Whitespace Semicolon Whitespace
-			l += 5
+			split := *last.Split
+			split.Split = nil
+			rejoined = append(rejoined, split)
 		}
 	}
-	if delimiter != nil {
-		l += 5
-		delimiter = nil
-	}
-	rejoined := make(Tokens, 0, l)
-	for i, tokens := range tl {
-		if len(tokens) == 0 {
-			continue
-		}
-		first := tokens[0]
-		if first.Delimiter != nil && first.Type != Delimiter {
-			safe := first.Copy()
-			safe.Delimiter = nil
-			safe.Split = nil
-			if sameTokens(delimiter, first.Delimiter) {
-				// Same delimiter as last Tokens
-				rejoined = append(rejoined, safe)
-			} else {
-				rejoined = append(rejoined, Token{Type: QuestionMark}) // XXX
-				delimiter = first.Delimiter
-				if i > 0 {
-					rejoined = append(rejoined, Token{Type: Whitespace, Text: "\n"})
-				}
-				rejoined = append(rejoined,
-					Token{Type: Delimiter, Text: "DELIMITER", Delimiter: first.Delimiter},
-					Token{Type: Whitespace, Text: " "},
-				)
-				rejoined = append(rejoined, delimiter...)
-				rejoined = append(rejoined,
-					Token{Type: Whitespace, Text: "\n"},
-				)
-				if len(delimiter) == 1 && delimiter[0].Type == Semicolon {
-					delimiter = nil
-				}
-				rejoined = append(rejoined, safe)
-				rejoined = append(rejoined, Token{Type: QuestionMark}) // XXX
-			}
-			if len(tokens) == 1 {
-				if first.Split != nil {
-					rejoined = append(rejoined, Token{Type: AtSign}) // XXX
-					rejoined = append(rejoined, first.Split...)
-					rejoined = append(rejoined, Token{Type: AtSign}) // XXX
-				} else {
-					rejoined = append(rejoined, Token{Type: ColonWord}) // XXX
-					rejoined = append(rejoined, first.Delimiter...)
-					rejoined = append(rejoined, Token{Type: ColonWord}) // XXX
-				}
-			}
-			tokens = tokens[1:]
-		} else if delimiter != nil && !(len(tokens) == 1 && tokens[0].Type == Whitespace) { //nolint:staticcheck // QF1001 De Morgan's law violation
-			rejoined = append(rejoined, endDelimiter...)
-			delimiter = nil
-		}
-		rejoined = append(rejoined, tokens...)
-		if len(tokens) > 0 {
-			last := tokens[len(tokens)-1]
-			if last.Split != nil {
-				lastIndex := len(rejoined) - 1
-				token := rejoined[lastIndex].Copy()
-				token.Split = nil
-				rejoined[lastIndex] = token
-				rejoined = append(rejoined, last.Split...)
-			}
-		}
-	}
-	if delimiter != nil {
-		rejoined = append(rejoined, endDelimiter...)
-	}
+	// XXX remove extra DELIMITER statements
 	return rejoined
-}
-
-var endDelimiter = []Token{
-	{Type: Whitespace, Text: "\n"},
-	{Type: Delimiter, Text: "DELIMITER", Delimiter: Tokens{
-		Token{Type: Semicolon, Text: ";"},
-	}},
-	{Type: Whitespace, Text: " "},
-	{Type: Semicolon, Text: ";"},
-	{Type: Whitespace, Text: "\n"},
-}
-
-// sameTokens ignores the Delimiter, Split, and Strip annotations
-func sameTokens(a Tokens, b Tokens) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, ta := range a {
-		tb := b[i]
-		if ta.Type != tb.Type {
-			return false
-		}
-		if ta.Text != tb.Text {
-			return false
-		}
-	}
-	return true
 }
 
 func copySlice[E any](s []E) []E {

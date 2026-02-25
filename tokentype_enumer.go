@@ -8,11 +8,11 @@ import (
 	"strings"
 )
 
-const _TokenTypeName = "CommentWhitespaceQuestionMarkAtSignDollarNumberColonWordLiteralIdentifierAtWordNumberSemicolonPunctuationWordOtherDelimiter"
+const _TokenTypeName = "CommentWhitespaceQuestionMarkAtSignDollarNumberColonWordLiteralIdentifierAtWordNumberDelimiterPunctuationWordOtherDelimiterStatement"
 
-var _TokenTypeIndex = [...]uint8{0, 7, 17, 29, 35, 47, 56, 63, 73, 79, 85, 94, 105, 109, 114, 123}
+var _TokenTypeIndex = [...]uint8{0, 7, 17, 29, 35, 47, 56, 63, 73, 79, 85, 94, 105, 109, 114, 132}
 
-const _TokenTypeLowerName = "commentwhitespacequestionmarkatsigndollarnumbercolonwordliteralidentifieratwordnumbersemicolonpunctuationwordotherdelimiter"
+const _TokenTypeLowerName = "commentwhitespacequestionmarkatsigndollarnumbercolonwordliteralidentifieratwordnumberdelimiterpunctuationwordotherdelimiterstatement"
 
 func (i TokenType) String() string {
 	if i < 0 || i >= TokenType(len(_TokenTypeIndex)-1) {
@@ -35,14 +35,14 @@ func _TokenTypeNoOp() {
 	_ = x[Identifier-(7)]
 	_ = x[AtWord-(8)]
 	_ = x[Number-(9)]
-	_ = x[Semicolon-(10)]
+	_ = x[Delimiter-(10)]
 	_ = x[Punctuation-(11)]
 	_ = x[Word-(12)]
 	_ = x[Other-(13)]
-	_ = x[Delimiter-(14)]
+	_ = x[DelimiterStatement-(14)]
 }
 
-var _TokenTypeValues = []TokenType{Comment, Whitespace, QuestionMark, AtSign, DollarNumber, ColonWord, Literal, Identifier, AtWord, Number, Semicolon, Punctuation, Word, Other, Delimiter}
+var _TokenTypeValues = []TokenType{Comment, Whitespace, QuestionMark, AtSign, DollarNumber, ColonWord, Literal, Identifier, AtWord, Number, Delimiter, Punctuation, Word, Other, DelimiterStatement}
 
 var _TokenTypeNameToValueMap = map[string]TokenType{
 	_TokenTypeName[0:7]:          Comment,
@@ -65,16 +65,16 @@ var _TokenTypeNameToValueMap = map[string]TokenType{
 	_TokenTypeLowerName[73:79]:   AtWord,
 	_TokenTypeName[79:85]:        Number,
 	_TokenTypeLowerName[79:85]:   Number,
-	_TokenTypeName[85:94]:        Semicolon,
-	_TokenTypeLowerName[85:94]:   Semicolon,
+	_TokenTypeName[85:94]:        Delimiter,
+	_TokenTypeLowerName[85:94]:   Delimiter,
 	_TokenTypeName[94:105]:       Punctuation,
 	_TokenTypeLowerName[94:105]:  Punctuation,
 	_TokenTypeName[105:109]:      Word,
 	_TokenTypeLowerName[105:109]: Word,
 	_TokenTypeName[109:114]:      Other,
 	_TokenTypeLowerName[109:114]: Other,
-	_TokenTypeName[114:123]:      Delimiter,
-	_TokenTypeLowerName[114:123]: Delimiter,
+	_TokenTypeName[114:132]:      DelimiterStatement,
+	_TokenTypeLowerName[114:132]: DelimiterStatement,
 }
 
 var _TokenTypeNames = []string{
@@ -92,7 +92,7 @@ var _TokenTypeNames = []string{
 	_TokenTypeName[94:105],
 	_TokenTypeName[105:109],
 	_TokenTypeName[109:114],
-	_TokenTypeName[114:123],
+	_TokenTypeName[114:132],
 }
 
 // TokenTypeString retrieves an enum value from the enum constants string name.

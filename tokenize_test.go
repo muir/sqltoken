@@ -17,7 +17,7 @@ var commonCases = []Tokens{
 	},
 	{
 		{Type: Word, Text: "c02"},
-		{Type: Semicolon, Text: ";"},
+		{Type: Delimiter, Text: ";"},
 		{Type: Word, Text: "morestuff"},
 	},
 	{
@@ -578,6 +578,94 @@ var mySQLCases = []Tokens{
 		{Type: Punctuation, Text: ":"},
 		{Type: Word, Text: "名前"},
 		{Type: Punctuation, Text: ")"},
+	},
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER    78\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "12"},
+		{Type: Delimiter, Text: "78"},
+		{Type: Whitespace, Text: "\n"},
+	},
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER /*foo*/\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "7"},
+		{Type: Delimiter, Text: "/*foo*/"},
+		{Type: Whitespace, Text: "\n"},
+	},
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER 'foo''bar'\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "'bar''foo'"},
+		{Type: Delimiter, Text: "foo'bar"},
+		{Type: Whitespace, Text: "\n"},
+	},
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER 'foo' 'bar'\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "'bar''foo'"},
+		{Type: Whitespace, Text: " "},
+		{Type: Delimiter, Text: "foobar"},
+		{Type: Whitespace, Text: "\n"},
+	},
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER ---\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "8"},
+		{Type: Comment, Text: "-- comment ---\n"},
+		{Type: Whitespace, Text: " "},
+		{Type: Delimiter, Text: "---"},
+		{Type: Whitespace, Text: "\n"},
+	},
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER x y z\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "8"},
+		{Type: Delimiter, Text: "x"},
+		{Type: Whitespace, Text: "\n"},
+	},
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER ---\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "9"},
+		{Type: Comment, Text: "/* --- comment */"},
+		{Type: Whitespace, Text: "\n "},
+		{Type: Delimiter, Text: "---"},
+		{Type: Whitespace, Text: "\n"},
+	},
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER o'foo$\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "'bar'"},
+		{Type: Delimiter, Text: "o'foo$"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "'baz'"},
+		{Type: Delimiter, Text: "o'foo$"},
+		{Type: DelimiterStatement, Text: "Delimiter ;\n"},
+	},
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER foo'\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "7"},
+		{Type: Whitespace, Text: " "},
+		{Type: Delimiter, Text: "foo'"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER ;\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "2"},
+		{Type: Delimiter, Text: ";"},
+		{Type: Whitespace, Text: "\n"},
 	},
 }
 
@@ -1197,20 +1285,22 @@ var separatePunctuationCases = []Tokens{
 
 func doTests(t *testing.T, config Config, cases ...[]Tokens) {
 	for _, tcl := range cases {
-		for _, tc := range tcl {
+		for i, tc := range tcl {
 			tc := tc
 			desc := "null"
 			if len(tc) > 0 {
 				desc = tc[0].Text
 			}
-			t.Run(desc, func(t *testing.T) {
+			t.Run(fmt.Sprintf("%03d_%s", i+1, desc), func(t *testing.T) {
 				text := tc.String()
 				t.Log("---------------------------------------")
 				t.Log(text)
 				t.Log("-----------------")
 				got := Tokenize(text, config)
-				require.Equal(t, text, got.String(), tc.String())
-				require.Equal(t, tc, got, tc.String())
+				if !assert.Equal(t, text, got.String(), tc.String()) || !assert.Equal(t, tc, got, tc.String()) {
+					dumpTokens(t, "want", tc)
+					dumpTokens(t, "got", got)
+				}
 			})
 		}
 	}
@@ -1386,8 +1476,8 @@ func TestCmdSplit(t *testing.T) {
 		{
 			name:            "delimiter",
 			input:           "DELIMITER ;\n",
-			notStripped:     []string{},
-			stripped:        []string{},
+			notStripped:     []string{"DELIMITER ;\n"},
+			stripped:        []string{"DELIMITER ;\n"},
 			joinNotStripped: "",
 			joinStripped:    "",
 		},
@@ -1439,7 +1529,7 @@ func TestCmdSplit(t *testing.T) {
 		{
 			name:            "delimiter_text_inside_literal_not_split",
 			input:           "DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\nSELECT 2;\n",
-			notStripped:     []string{"DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\n", "\n", "SELECT 2", "\n"},
+			notStripped:     []string{"DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\n", "SELECT 2", "\n"},
 			stripped:        []string{"DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\n", "SELECT 2"},
 			joinNotStripped: "DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\nSELECT 2;\n",
 			joinStripped:    "DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\nSELECT 2;",
@@ -1660,7 +1750,7 @@ func simplifyNLs(s string) string {
 }
 
 func dumpTokens(t *testing.T, prefix string, tokens ...Tokens) {
-	toString := func(what string, tkns ...Token) string {
+	tokensString := func(what string, tkns ...Token) string {
 		if len(tkns) == 0 {
 			return ""
 		}
@@ -1670,47 +1760,19 @@ func dumpTokens(t *testing.T, prefix string, tokens ...Tokens) {
 		}
 		return fmt.Sprintf(" (%s: %d: %s)", what, len(tkns), strings.Join(s, ", "))
 	}
+	tokenPointerString := func(what string, tkn *Token) string {
+		if tkn == nil {
+			return ""
+		}
+		return fmt.Sprintf(" (%s: %s: %q)", what, tkn.Type, tkn.Text)
+	}
 	for i, s := range tokens {
 		t.Logf(" %s-%d: %q", prefix, i, s.String())
 		for j, token := range s {
-			t.Logf("  %s-%d-%d: %s %q%s%s%s", prefix, i, j, token.Type, token.Text,
-				toString("delimiter", token.Delimiter...),
-				toString("split", token.Split...),
-				toString("strip", token.Strip...))
+			t.Logf("  %s-%d-%d: %s %q%s%s", prefix, i, j, token.Type, token.Text,
+				tokenPointerString("split", token.Split),
+				tokensString("strip", token.Strip...))
 		}
-	}
-}
-
-func TestDelimiterTokenizing(t *testing.T) {
-	cases := []struct {
-		input string
-		want  string
-	}{
-		{
-			input: "DELIMITER ;\n",
-			want:  ";",
-		},
-		{
-			input: "DELIMITER $$\nSELECT 1$$\n",
-			want:  "$$",
-		},
-		{
-			input: "delimiter //\nSELECT 1//\n",
-			want:  "//",
-		},
-	}
-	for _, tc := range cases {
-		ts := TokenizeMySQL(tc.input)
-		dumpTokens(t, "raw", ts)
-		var found Tokens
-		for _, tok := range ts {
-			if tok.Type == Delimiter {
-				found = Tokens(tok.Delimiter)
-				break
-			}
-		}
-		require.NotEmpty(t, found, tc.input)
-		require.Equal(t, tc.want, found.String(), tc.input)
 	}
 }
 
