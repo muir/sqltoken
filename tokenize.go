@@ -1797,7 +1797,6 @@ func wrapIfNeeded(hasContents, needsWrap bool, needsUnwrap bool, ts []Token, del
 		last := ts[lastIndex].Copy()
 		last.Split = t
 		n = append(n, last)
-		n = append(n, ts[:lastIndex]...)
 	} else {
 		n = append(n, ts...)
 	}
