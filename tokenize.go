@@ -1779,7 +1779,10 @@ func (ts Tokens) CmdSplitUnstripped() TokensList {
 				}
 			}
 			r = append(r, wrapIfNeeded(hasContents, needsWrap, needsUnwrap, ts[start:i], tp))
-			start = i + 1
+			start = i
+			if tp != nil {
+				start++
+			}
 			hasDelimiterStatement = false
 			needsWrap = ""
 			needsUnwrap = delimiter != "" // we'll need unwrap on the next statement
