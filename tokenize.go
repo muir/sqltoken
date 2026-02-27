@@ -1792,62 +1792,15 @@ func wrapIfNeeded(hasContents, needsWrap bool, needsUnwrap bool, ts []Token, del
 			Text: "DELIMITER " + delimiter + "\n",
 		})
 	}
-	if t != nil && delimiter != "" {
+	if t != nil {
 		n = append(n, ts[:lastIndex]...)
 		last := ts[lastIndex].Copy()
 		last.Split = t
 		n = append(n, last)
+		n = append(n, ts[:lastIndex]...)
+	} else {
+		n = append(n, ts...)
 	}
-	if needsUnwrap {
-		n = append(n, Token{
-			Type: DelimiterStatement,
-			Text: "DELIMITER ;\n",
-		})
-	}
-	return Tokens(n)
-}
-
-func wrapIfNeededXXX(hasContents, needsWrap bool, needsUnwrap bool, ts []Token, delimiter string, t *Token) Tokens {
-	lastIndex := len(ts) - 1
-	if lastIndex == -1 {
-		return Tokens{}
-	}
-	withSplit := func(in []Token) []Token {
-		if t == nil {
-			return in
-		}
-		out := make([]Token, len(in))
-		copy(out, in)
-		last := out[lastIndex]
-		last.Split = t
-		out[lastIndex] = last
-		return out
-	}
-	if !hasContents {
-		hasDelimiterStatement := false
-		for _, token := range ts {
-			if token.Type == DelimiterStatement {
-				hasDelimiterStatement = true
-				break
-			}
-		}
-		if hasDelimiterStatement {
-			return Tokens{}
-		}
-		return Tokens(withSplit(ts))
-	}
-	if !needsWrap && !needsUnwrap {
-		return Tokens(withSplit(ts))
-	}
-	out := withSplit(ts)
-	n := make([]Token, 0, len(out)+2)
-	if needsWrap {
-		n = append(n, Token{
-			Type: DelimiterStatement,
-			Text: delimiter,
-		})
-	}
-	n = append(n, out...)
 	if needsUnwrap {
 		n = append(n, Token{
 			Type: DelimiterStatement,
