@@ -8,11 +8,11 @@ import (
 	"strings"
 )
 
-const _TokenTypeName = "CommentWhitespaceQuestionMarkAtSignDollarNumberColonWordLiteralIdentifierAtWordNumberDelimiterPunctuationWordOtherDelimiterStatement"
+const _TokenTypeName = "CommentWhitespaceQuestionMarkAtSignDollarNumberColonWordLiteralIdentifierAtWordNumberDelimiterPunctuationWordOtherDelimiterStatementEmpty"
 
-var _TokenTypeIndex = [...]uint8{0, 7, 17, 29, 35, 47, 56, 63, 73, 79, 85, 94, 105, 109, 114, 132}
+var _TokenTypeIndex = [...]uint8{0, 7, 17, 29, 35, 47, 56, 63, 73, 79, 85, 94, 105, 109, 114, 132, 137}
 
-const _TokenTypeLowerName = "commentwhitespacequestionmarkatsigndollarnumbercolonwordliteralidentifieratwordnumberdelimiterpunctuationwordotherdelimiterstatement"
+const _TokenTypeLowerName = "commentwhitespacequestionmarkatsigndollarnumbercolonwordliteralidentifieratwordnumberdelimiterpunctuationwordotherdelimiterstatementempty"
 
 func (i TokenType) String() string {
 	if i < 0 || i >= TokenType(len(_TokenTypeIndex)-1) {
@@ -40,9 +40,10 @@ func _TokenTypeNoOp() {
 	_ = x[Word-(12)]
 	_ = x[Other-(13)]
 	_ = x[DelimiterStatement-(14)]
+	_ = x[Empty-(15)]
 }
 
-var _TokenTypeValues = []TokenType{Comment, Whitespace, QuestionMark, AtSign, DollarNumber, ColonWord, Literal, Identifier, AtWord, Number, Delimiter, Punctuation, Word, Other, DelimiterStatement}
+var _TokenTypeValues = []TokenType{Comment, Whitespace, QuestionMark, AtSign, DollarNumber, ColonWord, Literal, Identifier, AtWord, Number, Delimiter, Punctuation, Word, Other, DelimiterStatement, Empty}
 
 var _TokenTypeNameToValueMap = map[string]TokenType{
 	_TokenTypeName[0:7]:          Comment,
@@ -75,6 +76,8 @@ var _TokenTypeNameToValueMap = map[string]TokenType{
 	_TokenTypeLowerName[109:114]: Other,
 	_TokenTypeName[114:132]:      DelimiterStatement,
 	_TokenTypeLowerName[114:132]: DelimiterStatement,
+	_TokenTypeName[132:137]:      Empty,
+	_TokenTypeLowerName[132:137]: Empty,
 }
 
 var _TokenTypeNames = []string{
@@ -93,6 +96,7 @@ var _TokenTypeNames = []string{
 	_TokenTypeName[105:109],
 	_TokenTypeName[109:114],
 	_TokenTypeName[114:132],
+	_TokenTypeName[132:137],
 }
 
 // TokenTypeString retrieves an enum value from the enum constants string name.

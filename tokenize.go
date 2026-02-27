@@ -29,6 +29,7 @@ const (
 	Word                                // 12
 	Other                               // 13, control characters and other non-printables
 	DelimiterStatement                  // 14, DELIMITER command - MySQL only
+	Empty                               // 15, marker used in Split for a token that should be elimited in join
 )
 
 const Semicolon = Delimiter // Deprecated: for backwards compatibility only
@@ -1644,17 +1645,20 @@ func (ts Tokens) Strip() Tokens {
 			// skip it
 		case Whitespace:
 			// only append whitespace if there hasn't been a whitespace since lastReal
+			// and the last captured token doesn't end with whitespace
 			if lastWhitespace < lastReal {
-				if ts[i].Text != " " {
-					c = append(c, Token{
-						Type:  Whitespace,
-						Text:  " ",
-						Strip: Tokens{ts[i]},
-					})
-				} else {
-					c = append(c, ts[i])
+				if !lastEndsWithWhitespace(c) {
+					if ts[i].Text != " " {
+						c = append(c, Token{
+							Type:  Whitespace,
+							Text:  " ",
+							Strip: Tokens{ts[i]},
+						})
+					} else {
+						c = append(c, ts[i])
+					}
+					captureSkip()
 				}
-				captureSkip()
 				lastWhitespace = CSpace(len(c))
 			}
 		case Delimiter:
@@ -1688,7 +1692,7 @@ func (ts Tokens) Strip() Tokens {
 					}
 				}
 			}
-			nonStandardDelimiter = delimiterIsSemicolon(ts[i].Text)
+			nonStandardDelimiter = !delimiterIsSemicolon(ts[i].Text)
 			lastWhitespace = CSpace(len(c))
 			fallthrough
 		default:
@@ -1719,6 +1723,21 @@ func (ts Tokens) Strip() Tokens {
 		}
 	}
 	return c
+}
+
+func lastEndsWithWhitespace(ts []Token) bool {
+	if len(ts) == 0 {
+		return false
+	}
+	lastText := ts[len(ts)-1].Text
+	if lastText == "" {
+		return false
+	}
+	switch lastText[len(lastText)-1] {
+	case ' ', '\n', '\r', '\b', '\t':
+		return true
+	}
+	return false
 }
 
 // Unstrip reverses a Strip
@@ -1826,6 +1845,8 @@ func (ts Tokens) CmdSplitUnstripped() TokensList {
 	return r
 }
 
+var empty = Token{Type: Empty}
+
 func wrapIfNeeded(hasContents bool, needsWrap string, needsUnwrap bool, ts []Token, t *Token) Tokens {
 	lastIndex := len(ts) - 1
 	if lastIndex == -1 {
@@ -1837,8 +1858,9 @@ func wrapIfNeeded(hasContents bool, needsWrap string, needsUnwrap bool, ts []Tok
 	n := make([]Token, 0, len(ts)+2)
 	if needsWrap != "" && hasContents {
 		n = append(n, Token{
-			Type: DelimiterStatement,
-			Text: needsWrap,
+			Type:  DelimiterStatement,
+			Text:  needsWrap,
+			Split: &empty,
 		})
 	}
 	if t != nil && !needsUnwrap {
@@ -1854,8 +1876,9 @@ func wrapIfNeeded(hasContents bool, needsWrap string, needsUnwrap bool, ts []Tok
 			n = append(n, *t)
 		}
 		n = append(n, Token{
-			Type: DelimiterStatement,
-			Text: "\nDELIMITER ;\n",
+			Type:  DelimiterStatement,
+			Text:  "\nDELIMITER ;\n",
+			Split: &empty,
 		})
 	}
 	return Tokens(n)
@@ -1898,19 +1921,27 @@ func (tl TokensList) Join() Tokens {
 	}
 	l += len(tl) - 1
 	rejoined := make(Tokens, 0, l)
-	for _, tokens := range tl {
+	for i, tokens := range tl {
 		for _, token := range tokens {
-			token.Split = nil
+			if token.Type == Empty {
+				continue
+			}
+			if token.Split != nil {
+				if token.Split.Type == Empty && i < len(tl)-1 {
+					continue
+				}
+				token = token.Copy()
+				token.Split = nil
+			}
 			rejoined = append(rejoined, token)
 		}
 		last := tokens[len(tokens)-1]
-		if last.Split != nil {
+		if last.Split != nil && last.Split.Type != Empty {
 			split := *last.Split
 			split.Split = nil
 			rejoined = append(rejoined, split)
 		}
 	}
-	// XXX remove extra DELIMITER statements
 	return rejoined
 }
 

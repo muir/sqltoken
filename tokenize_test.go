@@ -1741,7 +1741,7 @@ func TestCmdSplit(t *testing.T) {
 				tc.joinStripped = ts.Strip().String()
 			}
 			notStrippedJoin := notStripped.Join()
-			if !assert.Equal(t, notStrippedCopy, notStripped, "notStripped after Join") {
+			if !assert.Equal(t, notStrippedCopy, notStripped, "notStripped changed") {
 				dumpTokens(t, "notStripped after", notStripped...)
 				t.FailNow()
 			}
@@ -1751,7 +1751,7 @@ func TestCmdSplit(t *testing.T) {
 				t.FailNow()
 			}
 			strippedJoin := stripped.Join()
-			if !assert.Equal(t, strippedCopy, stripped, "stripped after join") {
+			if !assert.Equal(t, strippedCopy, stripped, "stripped changed") {
 				dumpTokens(t, "stripped after", stripped...)
 				t.FailNow()
 			}
