@@ -1740,7 +1740,7 @@ func (ts Tokens) CmdSplitUnstripped() TokensList {
 	var delimiter string
 	// These variables create a little state machine
 	// that tracks if delimiter wrapping or unwrapping is required
-	var needsWrap bool
+	var needsWrap string
 	var needsUnwrap bool
 	var hasDelimiterStatement bool
 	var hasContents bool
@@ -1756,40 +1756,40 @@ func (ts Tokens) CmdSplitUnstripped() TokensList {
 				hasDelimiterStatement = true
 			}
 		case Delimiter:
-			r = append(r, wrapIfNeeded(hasContents, needsWrap, needsUnwrap, ts[start:i], delimiter, &t))
+			r = append(r, wrapIfNeeded(hasContents, needsWrap, needsUnwrap, ts[start:i], &ts[i]))
 			start = i + 1
 			hasDelimiterStatement = false
-			needsWrap = false
+			needsWrap = ""
 			needsUnwrap = delimiter != "" // we'll need unwrap on the next statement
 			hasContents = false
 		case Whitespace, Comment:
 			// nothing
 		default:
 			if delimiter != "" && !hasDelimiterStatement {
-				needsWrap = true
+				needsWrap = delimiter
 			}
 			hasContents = true
 		}
 	}
 	if start < len(ts) {
-		r = append(r, wrapIfNeeded(hasContents, needsWrap, needsUnwrap, ts[start:], delimiter, nil))
+		r = append(r, wrapIfNeeded(hasContents, needsWrap, needsUnwrap, ts[start:], nil))
 	}
 	return r
 }
 
-func wrapIfNeeded(hasContents, needsWrap bool, needsUnwrap bool, ts []Token, delimiter string, t *Token) Tokens {
+func wrapIfNeeded(hasContents bool, needsWrap string, needsUnwrap bool, ts []Token, t *Token) Tokens {
 	lastIndex := len(ts) - 1
 	if lastIndex == -1 {
 		return Tokens{}
 	}
-	if !needsWrap && !needsUnwrap && t == nil {
+	if needsWrap == "" && !needsUnwrap && t == nil {
 		return Tokens(ts)
 	}
 	n := make([]Token, 0, len(ts)+2)
-	if needsWrap {
+	if needsWrap != "" {
 		n = append(n, Token{
 			Type: DelimiterStatement,
-			Text: "DELIMITER " + delimiter + "\n",
+			Text: "DELIMITER " + needsWrap + "\n",
 		})
 	}
 	if t != nil {
