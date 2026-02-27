@@ -1760,7 +1760,25 @@ func (ts Tokens) CmdSplitUnstripped() TokensList {
 				hasDelimiterStatement = true
 			}
 		case Delimiter:
-			r = append(r, wrapIfNeeded(hasContents, needsWrap, needsUnwrap, ts[start:i], &ts[i]))
+			tp := &ts[i]
+			if needsUnwrap {
+			Lookahead:
+				for j := i + 1; j < len(ts); j++ {
+					switch ts[j].Type {
+					case Comment, Whitespace:
+						// keep going
+					case DelimiterStatement:
+						if delimiterIsSemicolon(ts[j].Text) {
+							i = j + 1
+							needsUnwrap = false
+							tp = nil
+							delimiter = ""
+						}
+						break Lookahead
+					}
+				}
+			}
+			r = append(r, wrapIfNeeded(hasContents, needsWrap, needsUnwrap, ts[start:i], tp))
 			start = i + 1
 			hasDelimiterStatement = false
 			needsWrap = ""
