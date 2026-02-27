@@ -1811,10 +1811,10 @@ func wrapIfNeeded(hasContents bool, needsWrap string, needsUnwrap bool, ts []Tok
 		return Tokens(ts)
 	}
 	n := make([]Token, 0, len(ts)+2)
-	if needsWrap != "" {
+	if needsWrap != "" && hasContents {
 		n = append(n, Token{
 			Type: DelimiterStatement,
-			Text: "DELIMITER " + needsWrap + "\n",
+			Text: needsWrap,
 		})
 	}
 	if t != nil && !needsUnwrap {
@@ -1825,7 +1825,7 @@ func wrapIfNeeded(hasContents bool, needsWrap string, needsUnwrap bool, ts []Tok
 	} else {
 		n = append(n, ts...)
 	}
-	if needsUnwrap {
+	if needsUnwrap && hasContents {
 		if t != nil {
 			n = append(n, *t)
 		}

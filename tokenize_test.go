@@ -1574,8 +1574,8 @@ func TestCmdSplit(t *testing.T) {
 		{
 			name:            "two_delimited_commands",
 			input:           "DELIMITER $$\nSELECT 1; $$\nSELECT 2$$\n",
-			notStripped:     []string{"DELIMITER $$\nSELECT 1; $$DELIMITER ;\n", "DELIMITER $$\n\nSELECT 2$$\nDELIMITER ;\n", "\n"},
-			stripped:        []string{"DELIMITER $$\nSELECT 1;$$\nDELIMITER ;\n", "DELIMITER $$\nSELECT 2$$\nDELIMITER ;\n"},
+			notStripped:     []string{"DELIMITER $$\nSELECT 1; $$DELIMITER ;\n", "DELIMITER $$\n\nSELECT 2$$DELIMITER ;\n", "\n"},
+			stripped:        []string{"DELIMITER $$\nSELECT 1; $$DELIMITER ;\n", "DELIMITER $$\nSELECT 2$$ DELIMITER ;\n"},
 			joinNotStripped: "DELIMITER $$\nSELECT 1; $$\nSELECT 2$$\n\nDELIMITER ;\n",
 			joinStripped:    "DELIMITER $$\nSELECT 1;$$SELECT 2$$\nDELIMITER ;\n",
 		},
