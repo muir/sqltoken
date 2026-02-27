@@ -667,6 +667,21 @@ var mySQLCases = []Tokens{
 		{Type: Delimiter, Text: ";"},
 		{Type: Whitespace, Text: "\n"},
 	},
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER $$\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "'$$'"},
+		{Type: Punctuation, Text: ";"},
+		{Type: Delimiter, Text: "$$"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER ;\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "2"},
+		{Type: Delimiter, Text: ";"},
+		{Type: Whitespace, Text: "\n"},
+	},
 }
 
 var postgreSQLCases = []Tokens{
@@ -1503,12 +1518,12 @@ func TestCmdSplit(t *testing.T) {
 			joinStripped: "select 1;select 2;",
 		},
 		{
-			name:            "extra_semicolons_preserved",
+			name:            "extra_semicolons_preserved_or_not",
 			input:           "SELECT 1;;SELECT 2;;;",
 			notStripped:     []string{"SELECT 1", "SELECT 2"},
 			stripped:        []string{"SELECT 1", "SELECT 2"},
-			joinNotStripped: "SELECT 1;;SELECT 2;;;",
-			joinStripped:    "SELECT 1;;SELECT 2;;;",
+			joinNotStripped: "SELECT 1;SELECT 2;",
+			joinStripped:    "SELECT 1;SELECT 2;",
 		},
 		{
 			name:            "semicolons_inside_literal_and_comment",

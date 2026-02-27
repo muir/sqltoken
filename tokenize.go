@@ -219,7 +219,7 @@ func (c Config) WithNoticeDelimiter() Config {
 func (c Config) combineOkay(t TokenType) bool {
 	// nolint:exhaustive
 	switch t {
-	case Number, QuestionMark, DollarNumber, ColonWord:
+	case Number, QuestionMark, DollarNumber, ColonWord, Delimiter, DelimiterStatement:
 		return false
 	case Punctuation:
 		return !c.SeparatePunctuation
@@ -388,7 +388,11 @@ BaseState:
 				token(Punctuation)
 			}
 		case ';':
-			token(Semicolon)
+			if config.NoticeDelimiter && delimiter != "" {
+				token(Punctuation)
+			} else {
+				token(Delimiter)
+			}
 		case '?':
 			if config.NoticeQuestionMark {
 				token(QuestionMark)
@@ -1792,7 +1796,7 @@ func wrapIfNeeded(hasContents bool, needsWrap string, needsUnwrap bool, ts []Tok
 			Text: "DELIMITER " + needsWrap + "\n",
 		})
 	}
-	if t != nil {
+	if t != nil && !needsUnwrap {
 		n = append(n, ts[:lastIndex]...)
 		last := ts[lastIndex].Copy()
 		last.Split = t
@@ -1801,6 +1805,9 @@ func wrapIfNeeded(hasContents bool, needsWrap string, needsUnwrap bool, ts []Tok
 		n = append(n, ts...)
 	}
 	if needsUnwrap {
+		if t != nil {
+			n = append(n, *t)
+		}
 		n = append(n, Token{
 			Type: DelimiterStatement,
 			Text: "DELIMITER ;\n",
