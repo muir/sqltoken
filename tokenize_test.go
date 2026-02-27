@@ -650,6 +650,7 @@ var mySQLCases = []Tokens{
 		{Type: Whitespace, Text: " "},
 		{Type: Literal, Text: "'baz'"},
 		{Type: Delimiter, Text: "o'foo$"},
+		{Type: Whitespace, Text: "\n"},
 		{Type: DelimiterStatement, Text: "Delimiter ;\n"},
 	},
 	{
@@ -680,6 +681,17 @@ var mySQLCases = []Tokens{
 		{Type: Whitespace, Text: " "},
 		{Type: Number, Text: "2"},
 		{Type: Delimiter, Text: ";"},
+		{Type: Whitespace, Text: "\n"},
+	},
+	{
+		{Type: DelimiterStatement, Text: "delimiter $$\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "19"},
+		{Type: Delimiter, Text: "$$"},
+		{Type: Word, Text: "delimiter"}, // not recognized because not at start of line
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: ";"},
 		{Type: Whitespace, Text: "\n"},
 	},
 }
@@ -1437,7 +1449,7 @@ func TestStrip(t *testing.T) {
 		},
 		{
 			before: "DELIMITER $$\nSELECT 1$$\nDELIMITER ;\n",
-			after:  "DELIMITER $$\nSELECT 1$$ DELIMITER ;\n",
+			after:  "DELIMITER $$\nSELECT 1$$\nDELIMITER ;\n",
 		},
 		{
 			before: "DELIMITER $$\nDELIMITER ;\n",
@@ -1545,9 +1557,9 @@ func TestCmdSplit(t *testing.T) {
 			name:            "delimiter_text_inside_literal_not_split",
 			input:           "DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\nSELECT 2;\n",
 			notStripped:     []string{"DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\n", "SELECT 2", "\n"},
-			stripped:        []string{"DELIMITER $$\nSELECT '$$';$$ DELIMITER ;\n", "SELECT 2"},
+			stripped:        []string{"DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\n", "SELECT 2"},
 			joinNotStripped: "DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\nSELECT 2;\n",
-			joinStripped:    "DELIMITER $$\nSELECT '$$';$$ DELIMITER ;\nSELECT 2;",
+			joinStripped:    "DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\nSELECT 2;",
 		},
 		{
 			name:            "leading_and_trailing_semicolon_runs",
@@ -1574,8 +1586,8 @@ func TestCmdSplit(t *testing.T) {
 		{
 			name:            "two_delimited_commands",
 			input:           "DELIMITER $$\nSELECT 1; $$\nSELECT 2$$\n",
-			notStripped:     []string{"DELIMITER $$\nSELECT 1; $$DELIMITER ;\n", "DELIMITER $$\n\nSELECT 2$$DELIMITER ;\n", "\n"},
-			stripped:        []string{"DELIMITER $$\nSELECT 1; $$DELIMITER ;\n", "DELIMITER $$\nSELECT 2$$ DELIMITER ;\n"},
+			notStripped:     []string{"DELIMITER $$\nSELECT 1; $$\nDELIMITER ;\n", "DELIMITER $$\n\nSELECT 2$$\nDELIMITER ;\n", "\n"},
+			stripped:        []string{"DELIMITER $$\nSELECT 1; $$\nDELIMITER ;\n", "DELIMITER $$\nSELECT 2$$\nDELIMITER ;\n"},
 			joinNotStripped: "DELIMITER $$\nSELECT 1; $$\nSELECT 2$$\n\nDELIMITER ;\n",
 			joinStripped:    "DELIMITER $$\nSELECT 1;$$SELECT 2$$\nDELIMITER ;\n",
 		},

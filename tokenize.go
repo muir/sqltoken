@@ -600,7 +600,7 @@ Word:
 			token(Word)
 			goto BaseState
 		case ' ', '\t':
-			if config.NoticeDelimiter && strings.EqualFold(s[tokenStart:i], "delimiter") {
+			if config.NoticeDelimiter && strings.EqualFold(s[tokenStart:i], "delimiter") && (tokenStart == 0 || s[tokenStart-1] == '\n') {
 				goto DelimiterStatementStart
 			}
 			token(Word)
@@ -1663,9 +1663,33 @@ func (ts Tokens) Strip() Tokens {
 				lastReal = CSpace(len(c))
 				lastKeptCapture = i + 1
 			}
+			lastWhitespace = lastReal // no whitespace after a delimiter
 			captureSkip()
 		case DelimiterStatement:
+			if len(c) > 0 && !strings.HasPrefix(ts[i].Text, "\n") {
+				// Adjust prior whitespace
+				lastIndex := len(c) - 1
+				last := c[lastIndex]
+				switch last.Type {
+				case Whitespace:
+					if last.Strip == nil {
+						last = last.Copy()
+						last.Strip = Tokens{c[lastIndex]}
+					}
+					last.Text = "\n"
+					c[lastIndex] = last
+				default:
+					if !strings.HasSuffix(last.Text, "\n") {
+						c = append(c, Token{
+							Type:  Whitespace,
+							Text:  "\n",
+							Strip: make(Tokens, 0),
+						})
+					}
+				}
+			}
 			nonStandardDelimiter = delimiterIsSemicolon(ts[i].Text)
+			lastWhitespace = CSpace(len(c))
 			fallthrough
 		default:
 			c = append(c, ts[i])
@@ -1831,7 +1855,7 @@ func wrapIfNeeded(hasContents bool, needsWrap string, needsUnwrap bool, ts []Tok
 		}
 		n = append(n, Token{
 			Type: DelimiterStatement,
-			Text: "DELIMITER ;\n",
+			Text: "\nDELIMITER ;\n",
 		})
 	}
 	return Tokens(n)
