@@ -1808,7 +1808,7 @@ func (ts Tokens) CmdSplitUnstripped() TokensList {
 			Lookahead:
 				for j := i + 1; j < len(ts); j++ {
 					switch ts[j].Type {
-					case Comment, Whitespace:
+					case Comment, Whitespace, Empty:
 						// keep going
 					case DelimiterStatement:
 						if delimiterIsSemicolon(ts[j].Text) {
@@ -1830,7 +1830,7 @@ func (ts Tokens) CmdSplitUnstripped() TokensList {
 			needsWrap = ""
 			needsUnwrap = delimiter != "" // we'll need unwrap on the next statement
 			hasContents = false
-		case Whitespace, Comment:
+		case Whitespace, Comment, Empty:
 			// nothing
 		default:
 			if delimiter != "" && !hasDelimiterStatement {
@@ -1921,13 +1921,14 @@ func (tl TokensList) Join() Tokens {
 	}
 	l += len(tl) - 1
 	rejoined := make(Tokens, 0, l)
+	indexLastReal := indexLastReal(tl)
 	for i, tokens := range tl {
-		for _, token := range tokens {
+		for j, token := range tokens {
 			if token.Type == Empty {
 				continue
 			}
 			if token.Split != nil {
-				if token.Split.Type == Empty && i < len(tl)-1 {
+				if token.Split.Type == Empty && i < indexLastReal || (i == indexLastReal && j < len(tokens)-1) {
 					continue
 				}
 				token = token.Copy()
@@ -1943,6 +1944,27 @@ func (tl TokensList) Join() Tokens {
 		}
 	}
 	return rejoined
+}
+
+func indexLastReal(tl TokensList) int {
+	for i := len(tl) - 1; i >= 0; i-- {
+		if !isWhitespaceOnly(tl[i]) {
+			return i
+		}
+	}
+	return -1
+}
+
+func isWhitespaceOnly(ts Tokens) bool {
+	for _, token := range ts {
+		switch token.Type {
+		case Whitespace, Empty, Comment:
+			// nah
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func copySlice[E any](s []E) []E {
