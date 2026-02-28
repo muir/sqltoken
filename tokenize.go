@@ -2,6 +2,7 @@ package sqltoken
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -1791,7 +1792,8 @@ func (ts Tokens) CmdSplitUnstripped() TokensList {
 	var needsUnwrap bool
 	var hasDelimiterStatement bool
 	var hasContents bool
-	for i, t := range ts {
+	for i := 0; i < len(ts); i++ {
+		t := ts[i]
 		switch t.Type {
 		case DelimiterStatement:
 			if delimiter != "" && hasContents && i-start > 0 {
@@ -1930,12 +1932,6 @@ func (tl TokensList) Join() Tokens {
 	indexLastReal := indexLastReal(tl)
 	for i, tokens := range tl {
 		for j, token := range tokens {
-			if j == 0 && i != 0 && token.Type == DelimiterStatement && !strings.HasPrefix(token.Text, "\n") && len(rejoined) > 0 && !strings.HasSuffix(rejoined[len(rejoined)-1].Text, "\n") {
-				rejoined = append(rejoined, Token{
-					Type: Whitespace,
-					Text: "\n",
-				})
-			}
 			if token.Type == Empty {
 				continue
 			}
@@ -1945,6 +1941,14 @@ func (tl TokensList) Join() Tokens {
 				}
 				token = token.Copy()
 				token.Split = nil
+			}
+			if os.Getenv("XXXREPRODUCE") == "true" {
+				if j == 0 && i != 0 && token.Type == DelimiterStatement && !strings.HasPrefix(token.Text, "\n") && len(rejoined) > 0 && !strings.HasSuffix(rejoined[len(rejoined)-1].Text, "\n") {
+					rejoined = append(rejoined, Token{
+						Type: Whitespace,
+						Text: "\n",
+					})
+				}
 			}
 			rejoined = append(rejoined, token)
 		}
