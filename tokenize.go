@@ -1794,6 +1794,12 @@ func (ts Tokens) CmdSplitUnstripped() TokensList {
 	for i, t := range ts {
 		switch t.Type {
 		case DelimiterStatement:
+			if delimiter != "" && !hasContents && i-start > 0 {
+				// flush accumulated whitespace, comment etc.
+				r = append(r, wrapIfNeeded(false, needsWrap, false, ts[start:i+1], nil))
+				start = i + 1
+				needsWrap = ""
+			}
 			if delimiterIsSemicolon(t.Text) {
 				needsUnwrap = false // we've just unwrapped
 				delimiter = ""
