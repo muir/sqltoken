@@ -2,7 +2,6 @@ package sqltoken
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -1826,6 +1825,8 @@ func (ts Tokens) CmdSplitUnstripped() TokensList {
 							delimiter = ""
 						}
 						break Lookahead
+					default:
+						break Lookahead
 					}
 				}
 			}
@@ -1942,13 +1943,11 @@ func (tl TokensList) Join() Tokens {
 				token = token.Copy()
 				token.Split = nil
 			}
-			if os.Getenv("XXXREPRODUCE") == "true" {
-				if j == 0 && i != 0 && token.Type == DelimiterStatement && !strings.HasPrefix(token.Text, "\n") && len(rejoined) > 0 && !strings.HasSuffix(rejoined[len(rejoined)-1].Text, "\n") {
-					rejoined = append(rejoined, Token{
-						Type: Whitespace,
-						Text: "\n",
-					})
-				}
+			if j == 0 && i != 0 && token.Type == DelimiterStatement && !strings.HasPrefix(token.Text, "\n") && len(rejoined) > 0 && !strings.HasSuffix(rejoined[len(rejoined)-1].Text, "\n") {
+				rejoined = append(rejoined, Token{
+					Type: Whitespace,
+					Text: "\n",
+				})
 			}
 			rejoined = append(rejoined, token)
 		}
