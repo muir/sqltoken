@@ -1665,7 +1665,7 @@ func TestCmdSplit(t *testing.T) {
 			},
 			notStripped: []string{
 				"DELIMITER $$\nSELECT 1$$\nDELIMITER ;\n",
-				"DELIMITER //\nSELECT 2//\nDELIMITER ;\n",
+				"\nDELIMITER //\nSELECT 2//\nDELIMITER ;\n",
 				"SELECT 3",
 				"\n",
 			},

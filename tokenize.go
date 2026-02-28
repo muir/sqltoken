@@ -1794,9 +1794,9 @@ func (ts Tokens) CmdSplitUnstripped() TokensList {
 	for i, t := range ts {
 		switch t.Type {
 		case DelimiterStatement:
-			if delimiter != "" && !hasContents && i-start > 0 {
+			if delimiter != "" && hasContents && i-start > 0 {
 				// flush accumulated whitespace, comment etc.
-				r = append(r, wrapIfNeeded(false, needsWrap, false, ts[start:i+1], nil))
+				r = append(r, wrapIfNeeded(hasContents, needsWrap, false, ts[start:i+1], nil))
 				start = i + 1
 				needsWrap = ""
 			}
@@ -1930,6 +1930,12 @@ func (tl TokensList) Join() Tokens {
 	indexLastReal := indexLastReal(tl)
 	for i, tokens := range tl {
 		for j, token := range tokens {
+			if j == 0 && i != 0 && token.Type == DelimiterStatement && !strings.HasPrefix(token.Text, "\n") && len(rejoined) > 0 && !strings.HasSuffix(rejoined[len(rejoined)-1].Text, "\n") {
+				rejoined = append(rejoined, Token{
+					Type: Whitespace,
+					Text: "\n",
+				})
+			}
 			if token.Type == Empty {
 				continue
 			}
