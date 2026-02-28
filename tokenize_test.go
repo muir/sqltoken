@@ -694,6 +694,137 @@ var mySQLCases = []Tokens{
 		{Type: Punctuation, Text: ";"},
 		{Type: Whitespace, Text: "\n"},
 	},
+	// delimiter at very end of input — off-by-one: currently not recognized as Delimiter
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER $$\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Punctuation, Text: "$$"},
+	},
+	// delimiter-only content right after DELIMITER statement — off-by-one
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER $$\n"},
+		{Type: Punctuation, Text: "$$"},
+	},
+	// DELIMITER after \r not recognized (only \n counts as line-start)
+	{
+		{Type: Whitespace, Text: "\r"},
+		{Type: Word, Text: "DELIMITER"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: "$$"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Punctuation, Text: "$$"},
+	},
+	// DELIMITER with no value — just EOF
+	{
+		{Type: Word, Text: "DELIMITER"},
+	},
+	// DELIMITER followed only by spaces then EOF
+	{
+		{Type: Word, Text: "DELIMITER"},
+		{Type: Whitespace, Text: "   "},
+	},
+	// DELIMITER immediately followed by \n (no space) — not recognized
+	{
+		{Type: Word, Text: "DELIMITER"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Delimiter, Text: ";"},
+	},
+	// single-character delimiter
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER /\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Delimiter, Text: "/"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER ;\n"},
+	},
+	// mixed-case delimiter command
+	{
+		{Type: DelimiterStatement, Text: "Delimiter $$\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Delimiter, Text: "$$"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: DelimiterStatement, Text: "DeLiMiTeR ;\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "2"},
+		{Type: Delimiter, Text: ";"},
+		{Type: Whitespace, Text: "\n"},
+	},
+	// multiple semicolons inside custom delimiter mode become Punctuation
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER $$\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Punctuation, Text: ";"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "2"},
+		{Type: Punctuation, Text: ";"},
+		{Type: Delimiter, Text: "$$"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER ;\n"},
+	},
+	// single-quoted delimiter value
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER '$$'\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Delimiter, Text: "$$"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER ;\n"},
+	},
+	// double-quoted delimiter value
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER \"$$\"\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Delimiter, Text: "$$"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER ;\n"},
+	},
+	// trailing junk after delimiter value is part of statement
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER $$ extra\n"},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Delimiter, Text: "$$"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER ;\n"},
+	},
+	// empty commands between consecutive delimiters
+	{
+		{Type: DelimiterStatement, Text: "DELIMITER $$\n"},
+		{Type: Delimiter, Text: "$$"},
+		{Type: Delimiter, Text: "$$"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER ;\n"},
+	},
+	// DELIMITER word mid-line treated as plain word
+	{
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "DELIMITER"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: "$$"},
+		{Type: Whitespace, Text: "\n"},
+	},
 }
 
 var postgreSQLCases = []Tokens{
@@ -1706,6 +1837,117 @@ func TestCmdSplit(t *testing.T) {
 			joinNotStripped: "DELIMITER $$\n \n$$\nDELIMITER ;\n",
 			joinStripped:    "DELIMITER $$\n$$\nDELIMITER ;\n",
 		},
+		{
+			name:        "only_semicolons",
+			input:       ";;;",
+			notStripped: []string{},
+			stripped:    []string{},
+		},
+		{
+			name:            "single_cmd_no_trailing_semicolon",
+			input:           "SELECT 1",
+			notStripped:     []string{"SELECT 1"},
+			stripped:        []string{"SELECT 1"},
+			joinNotStripped: "SELECT 1",
+			joinStripped:    "SELECT 1",
+		},
+		{
+			name:            "two_cmds_last_without_semicolon",
+			input:           "SELECT 1;SELECT 2",
+			notStripped:     []string{"SELECT 1", "SELECT 2"},
+			stripped:        []string{"SELECT 1", "SELECT 2"},
+			joinNotStripped: "SELECT 1;SELECT 2",
+			joinStripped:    "SELECT 1;SELECT 2",
+		},
+		{
+			name:         "whitespace_only_input",
+			input:        "   \n  \t  ",
+			notStripped:  []string{"   \n  \t  "},
+			stripped:     []string{},
+			joinStripped: "",
+		},
+		{
+			name:            "comment_before_semicolon",
+			input:           "/* c */;SELECT 1;",
+			notStripped:     []string{"/* c */", "SELECT 1"},
+			stripped:        []string{"SELECT 1"},
+			joinNotStripped: "/* c */;SELECT 1;",
+			joinStripped:    "SELECT 1;",
+		},
+		{
+			name:            "delimiter_no_reset_to_semicolon",
+			input:           "DELIMITER $$\nSELECT 1$$\n",
+			notStripped:     []string{"DELIMITER $$\nSELECT 1$$\nDELIMITER ;\n", "\n"},
+			stripped:        []string{"DELIMITER $$\nSELECT 1$$\nDELIMITER ;\n"},
+			joinNotStripped: "DELIMITER $$\nSELECT 1$$\nDELIMITER ;\n\n",
+			joinStripped:    "DELIMITER $$\nSELECT 1$$\nDELIMITER ;\n",
+		},
+		{
+			name:            "delimiter_immediately_after_stmt",
+			input:           "DELIMITER $$\n$$\nDELIMITER ;\n",
+			notStripped:     []string{"DELIMITER $$\n$$\nDELIMITER ;\n"},
+			stripped:        []string{"DELIMITER $$\n$$\nDELIMITER ;\n"},
+			joinNotStripped: "DELIMITER $$\n$$\nDELIMITER ;\n",
+			joinStripped:    "DELIMITER $$\n$$\nDELIMITER ;\n",
+		},
+		{
+			name:            "delimiter_literal_contains_delim_text",
+			input:           "DELIMITER $$\nSELECT '$$', 1$$\nDELIMITER ;\n",
+			notStripped:     []string{"DELIMITER $$\nSELECT '$$', 1$$\nDELIMITER ;\n"},
+			stripped:        []string{"DELIMITER $$\nSELECT '$$', 1$$\nDELIMITER ;\n"},
+			joinNotStripped: "DELIMITER $$\nSELECT '$$', 1$$\nDELIMITER ;\n",
+			joinStripped:    "DELIMITER $$\nSELECT '$$', 1$$\nDELIMITER ;\n",
+		},
+		{
+			name:            "delimiter_comment_contains_delim_text",
+			input:           "DELIMITER $$\nSELECT /* $$ */ 1$$\nDELIMITER ;\n",
+			notStripped:     []string{"DELIMITER $$\nSELECT /* $$ */ 1$$\nDELIMITER ;\n"},
+			stripped:        []string{"DELIMITER $$\nSELECT 1$$\nDELIMITER ;\n"},
+			joinNotStripped: "DELIMITER $$\nSELECT /* $$ */ 1$$\nDELIMITER ;\n",
+			joinStripped:    "DELIMITER $$\nSELECT 1$$\nDELIMITER ;\n",
+		},
+		{
+			name:  "three_delimiter_switches",
+			input: "DELIMITER $$\nA$$\nDELIMITER //\nB//\nDELIMITER ||\nC||\nDELIMITER ;\nD;\n",
+			stripped: []string{
+				"DELIMITER $$\nA$$\nDELIMITER ;\n",
+				"DELIMITER //\nB//\nDELIMITER ;\n",
+				"DELIMITER ||\nC||\nDELIMITER ;\n",
+				"D",
+			},
+			notStripped: []string{
+				"DELIMITER $$\nA$$\nDELIMITER ;\n",
+				"\nDELIMITER //\nB//\nDELIMITER ;\n",
+				"\nDELIMITER ||\nC||\nDELIMITER ;\n",
+				"D",
+				"\n",
+			},
+			joinStripped: "DELIMITER $$\nA$$\nDELIMITER //\nB//\nDELIMITER ||\nC||\nDELIMITER ;\nD;",
+		},
+		{
+			name:            "delimiter_semicolons_preserved_in_content",
+			input:           "DELIMITER $$\nSELECT 1; SELECT 2;$$\nDELIMITER ;\n",
+			notStripped:     []string{"DELIMITER $$\nSELECT 1; SELECT 2;$$\nDELIMITER ;\n"},
+			stripped:        []string{"DELIMITER $$\nSELECT 1; SELECT 2;$$\nDELIMITER ;\n"},
+			joinNotStripped: "DELIMITER $$\nSELECT 1; SELECT 2;$$\nDELIMITER ;\n",
+			joinStripped:    "DELIMITER $$\nSELECT 1; SELECT 2;$$\nDELIMITER ;\n",
+		},
+		{
+			name:            "delimiter_word_mid_line_not_recognized",
+			input:           "DELIMITER $$ SELECT 1;",
+			notStripped:     []string{"DELIMITER $$ SELECT 1"},
+			stripped:        []string{"DELIMITER $$ SELECT 1"},
+			joinNotStripped: "DELIMITER $$ SELECT 1;",
+			joinStripped:    "DELIMITER $$ SELECT 1;",
+		},
+		{
+			name:            "delimiter_change_without_any_content",
+			input:           "DELIMITER $$\nDELIMITER //\nDELIMITER ;\n",
+			notStripped:     []string{"DELIMITER $$\nDELIMITER //\nDELIMITER ;\n"},
+			stripped:        []string{"DELIMITER $$\nDELIMITER //\nDELIMITER ;\n"},
+			joinNotStripped: "DELIMITER $$\nDELIMITER //\nDELIMITER ;\n",
+			joinStripped:    "DELIMITER $$\nDELIMITER //\nDELIMITER ;\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1847,6 +2089,22 @@ func TestCmdSplitUnstrippedStrings(t *testing.T) {
 		{
 			raw:      []string{"SELECT 'a;b;c'", "/* ; ; */", "SELECT 2"},
 			stripped: []string{"SELECT 'a;b;c'", "SELECT 2"},
+		},
+		{
+			raw:      []string{"SELECT \";\"", "';'"},
+			stripped: []string{"SELECT \";\"", "';'"},
+		},
+		{
+			raw:      []string{"SELECT 1"},
+			stripped: []string{"SELECT 1"},
+		},
+		{
+			raw:      []string{"-- c1\n", "-- c2\n"},
+			stripped: []string{},
+		},
+		{
+			raw:      []string{"SELECT 1 /* inline */", "SELECT 2"},
+			stripped: []string{"SELECT 1", "SELECT 2"},
 		},
 	}
 	for _, tc := range cases {
