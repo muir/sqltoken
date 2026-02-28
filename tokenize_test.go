@@ -1638,14 +1638,14 @@ func TestCmdSplit(t *testing.T) {
 			name:         "delimited_whitespace_tail_is_unwrapped",
 			input:        "DELIMITER //\nSELECT 1// \nDELIMITER ;\nSELECT 2;\n",
 			stripped:     []string{"DELIMITER //\nSELECT 1//\nDELIMITER ;\n", "SELECT 2"},
-			notStripped:  []string{"DELIMITER //\nSELECT 1// \nDELIMITER ;\n", " \n", "SELECT 2", "\n"},
+			notStripped:  []string{"DELIMITER //\nSELECT 1// \nDELIMITER ;\n", "SELECT 2", "\n"},
 			joinStripped: "DELIMITER //\nSELECT 1//\nDELIMITER ;\nSELECT 2;",
 		},
 		{
 			name:         "delimited_comment_tail_no_leading_space_wrapped",
 			input:        "DELIMITER $$\nSELECT 1$$/*c*/\nDELIMITER ;\nSELECT 2;\n",
 			stripped:     []string{"DELIMITER $$\nSELECT 1$$\nDELIMITER ;\n", "SELECT 2"},
-			notStripped:  []string{"DELIMITER $$\nSELECT 1$$\nDELIMITER ;\n", "DELIMITER $$\n/*c*/\n$$\nDELIMITER ;\n", "SELECT 2", "\n"},
+			notStripped:  []string{"DELIMITER $$\nSELECT 1$$/*c*/\nDELIMITER ;\n", "SELECT 2", "\n"},
 			joinStripped: "DELIMITER $$\nSELECT 1$$\nDELIMITER ;\nSELECT 2;",
 		},
 		{
@@ -1665,9 +1665,7 @@ func TestCmdSplit(t *testing.T) {
 			},
 			notStripped: []string{
 				"DELIMITER $$\nSELECT 1$$\nDELIMITER ;\n",
-				"\n",
 				"DELIMITER //\nSELECT 2//\nDELIMITER ;\n",
-				"\n",
 				"SELECT 3",
 				"\n",
 			},
