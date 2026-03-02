@@ -59,6 +59,10 @@ type Config struct {
 	// NoticeHexValues 0xa0 x'af' X'AF' (MySQL)
 	NoticeHexNumbers bool
 
+	// NoticeLiteralBackslashEscape 'escape \' quote' (MySQL by default,
+	// PostgreSQL optional).
+	NoticeLiteralBackslashEscape bool
+
 	// NoticeBinaryValues 0x01 b'01' B'01' (MySQL)
 	NoticeBinaryNumbers bool
 
@@ -70,6 +74,9 @@ type Config struct {
 
 	// NoticeNotionalStrings [nN]'...''...' (Oracle, SQL Server)
 	NoticeNotionalStrings bool
+
+	// NoticeEscapedStrings [eE]'...' (PostgreSQL)
+	NoticeEscapedStrings bool
 
 	// NoticeDelimitedStrings [nN]?[qQ]'DELIM .... DELIM' (Oracle)
 	NoticeDeliminatedStrings bool
@@ -132,6 +139,13 @@ func (c Config) WithNoticeHexNumbers() Config {
 	return c
 }
 
+// WithNoticeLiteralBackslashEscape enables 'escape \' quote' (MySQL by default,
+// PostgreSQL optional).
+func (c Config) WithNoticeLiteralBackslashEscape() Config {
+	c.NoticeLiteralBackslashEscape = true
+	return c
+}
+
 // WithNoticeBinaryNumbers enables quoted binary number parsing (b'01') using the BinaryNumber token (MySQL)
 func (c Config) WithNoticeBinaryNumbers() Config {
 	c.NoticeBinaryNumbers = true
@@ -153,6 +167,12 @@ func (c Config) WithNoticeCharsetLiteral() Config {
 // WithNoticeNotionalStrings enables notional string parsing (n'string') using the Literal token (Oracle, SQL Server)
 func (c Config) WithNoticeNotionalStrings() Config {
 	c.NoticeNotionalStrings = true
+	return c
+}
+
+// WithNoticeEscapedStrings enables escaped string parsing (E'string') using the Literal token (PostgreSQL)
+func (c Config) WithNoticeEscapedStrings() Config {
+	c.NoticeEscapedStrings = true
 	return c
 }
 
@@ -237,7 +257,8 @@ func MySQLConfig() Config {
 		WithNoticeHashComment().
 		WithNoticeHexNumbers().
 		WithNoticeBinaryNumbers().
-		WithNoticeCharsetLiteral()
+		WithNoticeCharsetLiteral().
+		WithNoticeLiteralBackslashEscape()
 }
 
 // PostgreSQL returns a parsing configuration that is appropriate
@@ -246,7 +267,8 @@ func PostgreSQLConfig() Config {
 	return Config{}.
 		WithNoticeDollarNumber().
 		WithNoticeDollarQuotes().
-		WithNoticeUAmpPrefix()
+		WithNoticeUAmpPrefix().
+		WithNoticeEscapedStrings()
 }
 
 // TokenizeMySQL breaks up MySQL / MariaDB / SingleStore SQL strings into
@@ -312,6 +334,9 @@ BaseState:
 			}
 			token(Punctuation)
 		case '\'':
+			if config.NoticeLiteralBackslashEscape {
+				goto EscapedSingleQuoteString
+			}
 			goto SingleQuoteString
 		case '"':
 			goto DoubleQuoteString
@@ -398,15 +423,23 @@ BaseState:
 				}
 			}
 			goto Word
+		case 'e', 'E':
+			if config.NoticeEscapedStrings && i < len(s)-1 {
+				if s[i] == '\'' {
+					i++
+					goto EscapedSingleQuoteString
+				}
+			}
+			goto Word
 		case 'q', 'Q':
 			if config.NoticeDeliminatedStrings && i < len(s) && s[i] == '\'' {
 				i++
 				goto DeliminatedString
 			}
 			goto Word
-		case 'a' /*b*/, 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+		case 'a' /*b*/, 'c', 'd' /*'e'*/, 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
 			/*n*/ 'o', 'p' /*q*/, 'r', 's', 't', 'u', 'v', 'w' /*x*/, 'y', 'z',
-			'A' /*B*/, 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+			'A' /*B*/, 'C', 'D' /*'E'*/, 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
 			/*N*/ 'O', 'P' /*Q*/, 'R', 'S', 'T' /*U*/, 'V', 'W' /*X*/, 'Y', 'Z',
 			'_':
 			// This covers the entire alphabet except specific letters that have
@@ -470,6 +503,18 @@ CStyleComment:
 	goto Done
 
 SingleQuoteString:
+	for i < len(s) {
+		c := s[i]
+		i++
+		if c == '\'' {
+			token(Literal)
+			goto BaseState
+		}
+	}
+	token(Literal)
+	goto Done
+
+EscapedSingleQuoteString:
 	for i < len(s) {
 		c := s[i]
 		i++
