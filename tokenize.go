@@ -339,6 +339,9 @@ BaseState:
 			}
 			goto SingleQuoteString
 		case '"':
+			if config.NoticeLiteralBackslashEscape {
+				goto EscapedDoubleQuoteString
+			}
 			goto DoubleQuoteString
 		case '-':
 			if i < len(s) && s[i] == '-' {
@@ -535,6 +538,18 @@ EscapedSingleQuoteString:
 	goto Done
 
 DoubleQuoteString:
+	for i < len(s) {
+		c := s[i]
+		i++
+		if c == '"' {
+			token(Literal)
+			goto BaseState
+		}
+	}
+	token(Literal)
+	goto Done
+
+EscapedDoubleQuoteString:
 	for i < len(s) {
 		c := s[i]
 		i++
