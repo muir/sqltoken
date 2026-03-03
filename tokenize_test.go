@@ -571,18 +571,6 @@ var commonMySQLS2Cases = []Tokens{
 		{Type: Literal, Text: "';\\''"},
 	},
 	{
-		{Type: Word, Text: "m27a"},
-		{Type: Whitespace, Text: " "},
-		{Type: Literal, Text: "e'foo\\'bar'"},
-		{Type: Whitespace, Text: " "},
-	},
-	{
-		{Type: Word, Text: "m27b"},
-		{Type: Whitespace, Text: " "},
-		{Type: Literal, Text: "E'foo\\'bar'"},
-		{Type: Whitespace, Text: " "},
-	},
-	{
 		{Type: Word, Text: "m28"},
 		{Type: Whitespace, Text: " "},
 		{Type: Punctuation, Text: "-"},
@@ -622,6 +610,21 @@ var commonMySQLS2Cases = []Tokens{
 
 var mySQLCases = []Tokens{
 	{
+		// MySQL does not support E'...' prefix — E is a plain word
+		{Type: Word, Text: "m27a"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "e"},
+		{Type: Literal, Text: "'foo\\'bar'"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "m27b"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "E"},
+		{Type: Literal, Text: "'foo\\'bar'"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
 		{Type: Word, Text: "m14"},
 		{Type: Whitespace, Text: " "},
 		{Type: Literal, Text: "n'national charset'"},
@@ -648,11 +651,10 @@ var singleStoreCases = []Tokens{
 		{Type: Literal, Text: "'national charset'"},
 	},
 	{
-		// no support for charset prefix for literals
+		// _charset prefix IS supported by SingleStore
 		{Type: Word, Text: "m14"},
 		{Type: Whitespace, Text: " "},
-		{Type: Word, Text: "_utf8"},
-		{Type: Literal, Text: "'redundent'"},
+		{Type: Literal, Text: "_utf8'redundent'"},
 	},
 	{
 		// no support for n prefix for literals
@@ -660,6 +662,19 @@ var singleStoreCases = []Tokens{
 		{Type: Whitespace, Text: " "},
 		{Type: Word, Text: "n"},
 		{Type: Literal, Text: "'martha''s family'"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		// SingleStore supports E'...' prefix (unlike MySQL)
+		{Type: Word, Text: "s01"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "E'foo\\'bar'"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "s02"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "e'foo\\'bar'"},
 		{Type: Whitespace, Text: " "},
 	},
 }
@@ -780,10 +795,10 @@ var postgreSQLCases = []Tokens{
 		{Type: Whitespace, Text: " "},
 	},
 	{
+		// PostgreSQL accepts n'...' as a national string literal
 		{Type: Word, Text: "p16"},
 		{Type: Whitespace, Text: " "},
-		{Type: Word, Text: "n"},
-		{Type: Literal, Text: "'mysql only'"},
+		{Type: Literal, Text: "n'mysql only'"},
 	},
 	{
 		{Type: Word, Text: "p16"},
@@ -797,10 +812,10 @@ var postgreSQLCases = []Tokens{
 		{Type: Punctuation, Text: "=@:?"},
 	},
 	{
+		// PostgreSQL accepts n'...' as a national string literal
 		{Type: Word, Text: "p18"},
 		{Type: Whitespace, Text: " "},
-		{Type: Word, Text: "n"},
-		{Type: Literal, Text: "'martha''s family'"},
+		{Type: Literal, Text: "n'martha''s family'"},
 		{Type: Whitespace, Text: " "},
 	},
 	{
