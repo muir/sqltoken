@@ -926,6 +926,39 @@ var commonMySQLS2Cases = []Tokens{
 		{Type: Delimiter, Text: "\"59"},
 		{Type: Whitespace, Text: "\n"},
 	},
+	// Test case demonstrating bug: DELIMITER word at start of line inside a delimited block
+	// should be treated as Word token, not as DelimiterStatement.
+	// When custom delimiter ($$) is active, DELIMITER text inside the block should not
+	// trigger delimiter statement parsing.
+	{
+		// 60
+		{Type: DelimiterStatement, Text: "DELIMITER $$\n"},
+		{Type: Word, Text: "CREATE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "PROCEDURE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "test_proc"},
+		{Type: Punctuation, Text: "("},
+		{Type: Punctuation, Text: ")"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: Word, Text: "BEGIN"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: Word, Text: "DELIMITER"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "is"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "just"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "a"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "word"},
+		{Type: Punctuation, Text: ";"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: Word, Text: "END"},
+		{Type: Delimiter, Text: "$$"},
+		{Type: Whitespace, Text: "\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER ;\n"},
+	},
 }
 
 var mySQLCases = []Tokens{
