@@ -388,7 +388,7 @@ var commonCases = []Tokens{
 	},
 }
 
-var mySQLCases = []Tokens{
+var commonMySQLS2Cases = []Tokens{
 	{
 		{Type: Word, Text: "m01"},
 		{Type: Whitespace, Text: " "},
@@ -490,25 +490,9 @@ var mySQLCases = []Tokens{
 		{Type: Number, Text: "x'1f"},
 	},
 	{
-		{Type: Word, Text: "m14"},
-		{Type: Whitespace, Text: " "},
-		{Type: Literal, Text: "n'national charset'"},
-	},
-	{
-		{Type: Word, Text: "m14"},
-		{Type: Whitespace, Text: " "},
-		{Type: Literal, Text: "_utf8'redundent'"},
-	},
-	{
 		{Type: Word, Text: "m15"},
 		{Type: Whitespace, Text: " "},
 		{Type: Punctuation, Text: "=@:$"},
-	},
-	{
-		{Type: Word, Text: "m16"},
-		{Type: Whitespace, Text: " "},
-		{Type: Literal, Text: "n'martha''s family'"},
-		{Type: Whitespace, Text: " "},
 	},
 	{
 		{Type: Word, Text: "m17"},
@@ -587,6 +571,18 @@ var mySQLCases = []Tokens{
 		{Type: Literal, Text: "';\\''"},
 	},
 	{
+		{Type: Word, Text: "m27a"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "e'foo\\'bar'"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "m27b"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "E'foo\\'bar'"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
 		{Type: Word, Text: "m28"},
 		{Type: Whitespace, Text: " "},
 		{Type: Punctuation, Text: "-"},
@@ -598,6 +594,50 @@ var mySQLCases = []Tokens{
 		{Type: Whitespace, Text: " "},
 		{Type: Punctuation, Text: "-"},
 		{Type: Literal, Text: "';\\''"},
+	},
+}
+
+var mySQLCases = []Tokens{
+	{
+		{Type: Word, Text: "m14"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "n'national charset'"},
+	},
+	{
+		{Type: Word, Text: "m14"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "_utf8'redundent'"},
+	},
+	{
+		{Type: Word, Text: "m16"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "n'martha''s family'"},
+		{Type: Whitespace, Text: " "},
+	},
+}
+
+var singleStoreCases = []Tokens{
+	{
+		// no support for n prefix for literals
+		{Type: Word, Text: "m14"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "n"},
+		{Type: Literal, Text: "'national charset'"},
+	},
+	{
+		// no support for charset prefix for literals
+		{Type: Word, Text: "m14"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "_utf8"},
+		{Type: Literal, Text: "'redundent'"},
+	},
+	{
+		// no support for n prefix for literals
+		{Type: Word, Text: "m16"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "n"},
+		{Type: Literal, Text: "'martha''s family'"},
+		{Type: Whitespace, Text: " "},
 	},
 }
 
@@ -851,6 +891,12 @@ var postgreSQLCases = []Tokens{
 		{Type: Word, Text: "p34"},
 		{Type: Whitespace, Text: " "},
 		{Type: Literal, Text: "E'back \\ slash'"},
+		{Type: Whitespace, Text: " "},
+	},
+	{
+		{Type: Word, Text: "p35"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "e'foo\\'bar'"},
 		{Type: Whitespace, Text: " "},
 	},
 }
@@ -1233,7 +1279,7 @@ var separatePunctuationCases = []Tokens{
 	},
 }
 
-func doTests(t *testing.T, config Config, cases ...[]Tokens) {
+func doTests(t *testing.T, prefix string, config Config, cases ...[]Tokens) {
 	for _, tcl := range cases {
 		for _, tc := range tcl {
 			tc := tc
@@ -1241,7 +1287,7 @@ func doTests(t *testing.T, config Config, cases ...[]Tokens) {
 			if len(tc) > 0 {
 				desc = tc[0].Text
 			}
-			t.Run(desc, func(t *testing.T) {
+			t.Run(prefix+desc, func(t *testing.T) {
 				text := tc.String()
 				t.Log("---------------------------------------")
 				t.Log(text)
@@ -1255,32 +1301,38 @@ func doTests(t *testing.T, config Config, cases ...[]Tokens) {
 }
 
 func TestMySQLTokenizing(t *testing.T) {
-	doTests(t, MySQLConfig(), commonCases, mySQLCases)
+	doTests(t, "common_", MySQLConfig(), commonCases, commonMySQLS2Cases)
+	doTests(t, "mysql_", MySQLConfig(), commonCases, mySQLCases)
+}
+
+func TestSingleStoreTokenizing(t *testing.T) {
+	doTests(t, "common_", SingleStoreConfig(), commonCases, commonMySQLS2Cases)
+	doTests(t, "mysql_", SingleStoreConfig(), commonCases, singleStoreCases)
 }
 
 func TestPostgresSQLTokenizing(t *testing.T) {
-	doTests(t, PostgreSQLConfig(), commonCases, postgreSQLCases)
+	doTests(t, "psql_", PostgreSQLConfig(), commonCases, postgreSQLCases)
 }
 
 func TestOracleTokenizing(t *testing.T) {
-	doTests(t, OracleConfig(), commonCases, oracleCases)
+	doTests(t, "oracle_", OracleConfig(), commonCases, oracleCases)
 }
 
 func TestSQLServerTokenizing(t *testing.T) {
-	doTests(t, SQLServerConfig(), commonCases, sqlServerCases)
+	doTests(t, "sqlsvr_", SQLServerConfig(), commonCases, sqlServerCases)
 }
 
 func TestOddbal1Tokenizing(t *testing.T) {
 	c := SQLServerConfig()
 	c.NoticeAtWord = false
-	doTests(t, c, commonCases, oddball1Cases)
+	doTests(t, "oddball_", c, commonCases, oddball1Cases)
 }
 
 func TestOddbal2Tokenizing(t *testing.T) {
 	c := MySQLConfig()
 	c.NoticeColonWord = true
 	c.ColonWordIncludesUnicode = true
-	doTests(t, c, commonCases, oddball2Cases)
+	doTests(t, "oddball2_", c, commonCases, oddball2Cases)
 }
 
 func TestSeparatePunctuationTokenizing(t *testing.T) {
@@ -1288,7 +1340,7 @@ func TestSeparatePunctuationTokenizing(t *testing.T) {
 	c.NoticeColonWord = true
 	c.NoticeQuestionMark = true
 	c.SeparatePunctuation = true
-	doTests(t, c, separatePunctuationCases)
+	doTests(t, "punct_", c, separatePunctuationCases)
 }
 
 func TestStrip(t *testing.T) {

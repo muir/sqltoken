@@ -250,7 +250,7 @@ func SQLServerConfig() Config {
 }
 
 // MySQL returns a parsing configuration that is appropriate
-// for parsing MySQL, MariaDB, and SingleStore SQL.
+// for parsing MySQL, MariaDB.
 func MySQLConfig() Config {
 	return Config{}.
 		WithNoticeQuestionMark().
@@ -258,7 +258,19 @@ func MySQLConfig() Config {
 		WithNoticeHexNumbers().
 		WithNoticeBinaryNumbers().
 		WithNoticeCharsetLiteral().
-		WithNoticeLiteralBackslashEscape()
+		WithNoticeLiteralBackslashEscape().
+		WithNoticeEscapedStrings()
+}
+
+// SingleStore is almost the same as MySQL but it doesn't support notional strings
+func SingleStoreConfig() Config {
+	return Config{}.
+		WithNoticeQuestionMark().
+		WithNoticeHashComment().
+		WithNoticeHexNumbers().
+		WithNoticeBinaryNumbers().
+		WithNoticeLiteralBackslashEscape().
+		WithNoticeEscapedStrings()
 }
 
 // PostgreSQL returns a parsing configuration that is appropriate
@@ -271,10 +283,16 @@ func PostgreSQLConfig() Config {
 		WithNoticeEscapedStrings()
 }
 
-// TokenizeMySQL breaks up MySQL / MariaDB / SingleStore SQL strings into
+// TokenizeMySQL breaks up MySQL / MariaDB strings into
 // Token objects.
 func TokenizeMySQL(s string) Tokens {
 	return Tokenize(s, MySQLConfig())
+}
+
+// TokenizeSingleStore breaks up SingleStore SQL strings into
+// Token objects.
+func TokenizeMySQL(s string) Tokens {
+	return Tokenize(s, SingleStoreConfig())
 }
 
 // TokenizePostgreSQL breaks up PostgreSQL / CockroachDB SQL strings into
