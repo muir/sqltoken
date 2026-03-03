@@ -69,8 +69,11 @@ type Config struct {
 	// NoticeUAmpPrefix U& utf prefix U&"\0441\043B\043E\043D" (PostgreSQL)
 	NoticeUAmpPrefix bool
 
-	// NoticeCharsetLiteral _latin1'string' n'string' (MySQL)
+	// NoticeCharsetLiteral _latin1'string' (MySQL, SingleStore)
 	NoticeCharsetLiteral bool
+
+	// NoticeNationalPrefix n'string' N'string' (MySQL)
+	NoticeNationalPrefix bool
 
 	// NoticeNotionalStrings [nN]'...''...' (Oracle, SQL Server)
 	NoticeNotionalStrings bool
@@ -158,9 +161,15 @@ func (c Config) WithNoticeUAmpPrefix() Config {
 	return c
 }
 
-// WithNoticeCharsetLiteral enables charset literal parsing (_latin1'string') using the Literal token (MySQL)
+// WithNoticeCharsetLiteral enables charset literal parsing (_latin1'string') using the Literal token (MySQL, SingleStore)
 func (c Config) WithNoticeCharsetLiteral() Config {
 	c.NoticeCharsetLiteral = true
+	return c
+}
+
+// WithNoticeNationalPrefix enables national string prefix parsing (n'string' N'string') using the Literal token (MySQL)
+func (c Config) WithNoticeNationalPrefix() Config {
+	c.NoticeNationalPrefix = true
 	return c
 }
 
@@ -249,8 +258,8 @@ func SQLServerConfig() Config {
 		WithNoticeIdentifiers()
 }
 
-// MySQL returns a parsing configuration that is appropriate
-// for parsing MySQL, MariaDB, and SingleStore SQL.
+// MySQLConfig returns a parsing configuration that is appropriate
+// for parsing MySQL and MariaDB SQL.
 func MySQLConfig() Config {
 	return Config{}.
 		WithNoticeQuestionMark().
@@ -258,23 +267,44 @@ func MySQLConfig() Config {
 		WithNoticeHexNumbers().
 		WithNoticeBinaryNumbers().
 		WithNoticeCharsetLiteral().
+		WithNoticeNationalPrefix().
 		WithNoticeLiteralBackslashEscape()
 }
 
-// PostgreSQL returns a parsing configuration that is appropriate
+// SingleStoreConfig returns a parsing configuration that is appropriate
+// for parsing SingleStore SQL.
+func SingleStoreConfig() Config {
+	return Config{}.
+		WithNoticeQuestionMark().
+		WithNoticeHashComment().
+		WithNoticeHexNumbers().
+		WithNoticeBinaryNumbers().
+		WithNoticeCharsetLiteral().
+		WithNoticeLiteralBackslashEscape().
+		WithNoticeEscapedStrings()
+}
+
+// PostgreSQLConfig returns a parsing configuration that is appropriate
 // for parsing PostgreSQL and CockroachDB SQL.
 func PostgreSQLConfig() Config {
 	return Config{}.
 		WithNoticeDollarNumber().
 		WithNoticeDollarQuotes().
 		WithNoticeUAmpPrefix().
+		WithNoticeNationalPrefix().
 		WithNoticeEscapedStrings()
 }
 
-// TokenizeMySQL breaks up MySQL / MariaDB / SingleStore SQL strings into
+// TokenizeMySQL breaks up MySQL / MariaDB strings into
 // Token objects.
 func TokenizeMySQL(s string) Tokens {
 	return Tokenize(s, MySQLConfig())
+}
+
+// TokenizeSingleStore breaks up SingleStore SQL strings into
+// Token objects.
+func TokenizeSingleStore(s string) Tokens {
+	return Tokenize(s, SingleStoreConfig())
 }
 
 // TokenizePostgreSQL breaks up PostgreSQL / CockroachDB SQL strings into
@@ -339,6 +369,9 @@ BaseState:
 			}
 			goto SingleQuoteString
 		case '"':
+			if config.NoticeLiteralBackslashEscape {
+				goto EscapedDoubleQuoteString
+			}
 			goto DoubleQuoteString
 		case '-':
 			if i < len(s) && s[i] == '-' {
@@ -538,6 +571,18 @@ DoubleQuoteString:
 	for i < len(s) {
 		c := s[i]
 		i++
+		if c == '"' {
+			token(Literal)
+			goto BaseState
+		}
+	}
+	token(Literal)
+	goto Done
+
+EscapedDoubleQuoteString:
+	for i < len(s) {
+		c := s[i]
+		i++
 		switch c {
 		case '"':
 			token(Literal)
@@ -598,17 +643,19 @@ Word:
 			token(Word)
 			goto BaseState
 		case '\'':
-			if config.NoticeCharsetLiteral {
-				switch s[tokenStart] {
-				case 'n', 'N':
-					if i-tokenStart == 1 {
-						i++
-						goto SingleQuoteString
-					}
-				case '_':
-					i++
-					goto SingleQuoteString
+			if config.NoticeCharsetLiteral && s[tokenStart] == '_' {
+				i++
+				if config.NoticeLiteralBackslashEscape {
+					goto EscapedSingleQuoteString
 				}
+				goto SingleQuoteString
+			}
+			if config.NoticeNationalPrefix && (s[tokenStart] == 'n' || s[tokenStart] == 'N') && i-tokenStart == 1 {
+				i++
+				if config.NoticeLiteralBackslashEscape {
+					goto EscapedSingleQuoteString
+				}
+				goto SingleQuoteString
 			}
 		}
 		r, w := utf8.DecodeRuneInString(s[i:])
