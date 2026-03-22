@@ -3,16 +3,19 @@ package sqltoken
 // Config specifies the behavior of Tokenize as relates to behavior
 // that differs between SQL implementations
 type Config struct {
-	// Tokenize ? as type Question (used by MySQL)
+	// Tokenize ? as type Question (used by MySQL, SQLite)
 	NoticeQuestionMark bool
 
-	// Tokenize $7 as type DollarNumber (PostgreSQL)
+	// Tokenize ?1 as type Question; implies NoticeQuestionMark (used by SQLite)
+	NoticeQuestionNumber bool
+
+	// Tokenize $7 as type DollarNumber (PostgreSQL, SQLite)
 	NoticeDollarNumber bool
 
-	// Tokenize :word as type ColonWord (sqlx, Oracle)
+	// Tokenize :word as type ColonWord (sqlx, Oracle, SQLite)
 	NoticeColonWord bool
 
-	// Tokenize :word with unicode as ColonWord (sqlx)
+	// Tokenize :word with unicode as ColonWord (sqlx, SQlite)
 	ColonWordIncludesUnicode bool
 
 	// Tokenize # as type comment (MySQL)
@@ -55,10 +58,10 @@ type Config struct {
 	// NoticeMoneyConstants $10 $10.32 (SQL Server)
 	NoticeMoneyConstants bool
 
-	// NoticeAtWord @foo (SQL Server)
+	// NoticeAtWord @foo (SQL Server, SQLite)
 	NoticeAtWord bool
 
-	// NoticeAtIdentifiers _baz @fo$o @@b#ar #foo ##b@ar(SQL Server)
+	// NoticeAtIdentifiers _baz @fo$o @@b#ar #foo ##b@ar (SQL Server)
 	NoticeIdentifiers bool
 
 	// SeparatePunctuation prevents merging successive punctuation into a single token
@@ -77,7 +80,14 @@ func (c Config) WithNoticeQuestionMark() Config {
 	return c
 }
 
-// WithNoticeDollarNumber enables parsing dollar parameters ($1) for PostgreSQL using the DollarNumber token
+// WithNoticeQuestionNumber enables parsing question marks followed by a number (?1) for SQLite.
+func (c Config) WithNoticeQuestionNumber() Config {
+	c.NoticeQuestionNumber = true
+	return c
+}
+
+// WithNoticeDollarNumber enables parsing dollar parameters ($1) for PostgreSQL
+// and SQLite using the DollarNumber token
 func (c Config) WithNoticeDollarNumber() Config {
 	c.NoticeDollarNumber = true
 	return c
@@ -269,6 +279,19 @@ func PostgreSQLConfig() Config {
 		WithNoticeEscapedStrings()
 }
 
+// SQLiteConfig returns a parsing configuration that is appropriate for parsing
+// SQLite SQL.
+func SQLiteConfig() Config {
+	return Config{}.
+		WithNoticeQuestionNumber().
+		WithNoticeQuestionMark().
+		WithNoticeColonWord().
+		WithColonWordIncludesUnicode().
+		WithNoticeAtWord().
+		WithNoticeDollarNumber()
+
+}
+
 // TokenizeMySQL breaks up MySQL / MariaDB strings into
 // Token objects.
 func TokenizeMySQL(s string) Tokens {
@@ -285,4 +308,9 @@ func TokenizeSingleStore(s string) Tokens {
 // Token objects.
 func TokenizePostgreSQL(s string) Tokens {
 	return Tokenize(s, PostgreSQLConfig())
+}
+
+// TokenizeSQLite breaks up SQLite strings into Token objects.
+func TokenizeSQLite(s string) Tokens {
+	return Tokenize(s, SQLiteConfig())
 }
