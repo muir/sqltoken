@@ -14,13 +14,13 @@ type TokenType int
 const (
 	Comment            TokenType = iota // 0
 	Whitespace                          // 1
-	QuestionMark                        // 2, used in MySQL substitution
+	QuestionMark                        // 2, used in MySQL and SQLite substitution
 	AtSign                              // 3, used in sqlserver substitution
-	DollarNumber                        // 4, used in PostgreSQL substitution
+	DollarNumber                        // 4, used in PostgreSQL and SQLite substitution
 	ColonWord                           // 5, used in sqlx substitution
 	Literal                             // 6, strings
 	Identifier                          // 7, used in SQL Server for many things
-	AtWord                              // 8, used in SQL Server, subset of Identifier
+	AtWord                              // 8, used in SQL Server and SQLite, subset of Identifier
 	Number                              // 9
 	Delimiter                           // 10, semicolon except for MySQL when DELIMITER is used
 	Punctuation                         // 11
@@ -146,6 +146,9 @@ BaseState:
 				token(Delimiter)
 			}
 		case '?':
+			if config.NoticeQuestionNumber {
+				goto QuestionMark
+			}
 			if config.NoticeQuestionMark {
 				token(QuestionMark)
 			} else {
@@ -1270,6 +1273,33 @@ DeliminatedStringRune:
 		}
 	}
 	token(Literal)
+	goto Done
+
+QuestionMark:
+	if i < stop {
+		c := s[i]
+		switch c {
+		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+			i++
+			for i < stop {
+				c := s[i]
+				i++
+				switch c {
+				case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+					continue
+				}
+				i--
+				break
+			}
+			token(QuestionMark)
+			goto BaseState
+		}
+		// ?
+		token(QuestionMark)
+		goto BaseState
+	}
+	// ?
+	token(QuestionMark)
 	goto Done
 
 Dollar:

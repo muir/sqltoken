@@ -923,6 +923,18 @@ var commonMySQLS2Cases = []Tokens{
 		{Type: Delimiter, Text: "\"59"},
 		{Type: Whitespace, Text: "\n"},
 	},
+	{
+		{Type: Word, Text: "select"},
+		{Type: Whitespace, Text: " "},
+		{Type: QuestionMark, Text: "?"},
+		{Type: Punctuation, Text: ","},
+		{Type: Whitespace, Text: " "},
+		{Type: QuestionMark, Text: "?"},
+		{Type: Number, Text: "1"},
+		{Type: Punctuation, Text: ","},
+		{Type: Whitespace, Text: " "},
+		{Type: QuestionMark, Text: "?"},
+	},
 }
 
 var mySQLCases = []Tokens{
@@ -1256,6 +1268,38 @@ var postgreSQLCases = []Tokens{
 	},
 }
 
+var sqliteCases = []Tokens{
+	{
+		{Type: Word, Text: "select"},
+		{Type: Whitespace, Text: " "},
+		{Type: QuestionMark, Text: "?"},
+		{Type: Punctuation, Text: ","},
+		{Type: Whitespace, Text: " "},
+		{Type: QuestionMark, Text: "?1"},
+		{Type: Punctuation, Text: ","},
+		{Type: Whitespace, Text: " "},
+		{Type: QuestionMark, Text: "?"},
+	},
+	{
+		{Type: Word, Text: "select"},
+		{Type: Whitespace, Text: " "},
+		{Type: QuestionMark, Text: "?"},
+		{Type: Punctuation, Text: ","},
+		{Type: Whitespace, Text: " "},
+		{Type: QuestionMark, Text: "?123"},
+		{Type: Punctuation, Text: ","},
+		{Type: Whitespace, Text: " "},
+		{Type: ColonWord, Text: ":one"},
+		{Type: Punctuation, Text: ","},
+		{Type: Whitespace, Text: " "},
+		{Type: AtWord, Text: "@two"},
+		{Type: Punctuation, Text: ","},
+		{Type: Whitespace, Text: " "},
+		{Type: DollarNumber, Text: "$456"},
+		{Type: Whitespace, Text: " "},
+	},
+}
+
 var oracleCases = []Tokens{
 	{
 		{Type: Word, Text: "o1"},
@@ -1565,7 +1609,7 @@ var oddball1Cases = []Tokens{
 	},
 }
 
-// SQLx
+// SQLx, SQLite
 var oddball2Cases = []Tokens{
 	{
 		{Type: Word, Text: "sqlx1"},
@@ -1669,6 +1713,10 @@ func TestSingleStoreTokenizing(t *testing.T) {
 
 func TestPostgresSQLTokenizing(t *testing.T) {
 	doTests(t, "psql_", PostgreSQLConfig(), commonCases, postgreSQLCases)
+}
+
+func TestSQLiteTokenizing(t *testing.T) {
+	doTests(t, "sqlite_", SQLiteConfig(), commonCases, sqliteCases, oddball2Cases)
 }
 
 func TestOracleTokenizing(t *testing.T) {
