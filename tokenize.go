@@ -56,6 +56,72 @@ type TokensList []Tokens
 
 const debug = false
 
+// beginTransactionContinuer reports the word that may immediately follow BEGIN for
+// BEGIN WORK / BEGIN TRANSACTION-style transaction starters (not a nested compound).
+func beginTransactionContinuer(w string) bool {
+	if len(w) == 0 {
+		return false
+	}
+	switch w[0] {
+	case 't', 'T':
+		return strings.EqualFold(w, "transaction")
+	case 'w', 'W':
+		return strings.EqualFold(w, "work")
+	default:
+		return false
+	}
+}
+
+func mysqlImmediatePreviousWordMatches(lastWord string, prevNonSpace Token, hasPrev bool) bool {
+	return hasPrev && prevNonSpace.Type == Word && strings.EqualFold(prevNonSpace.Text, lastWord)
+}
+
+func mysqlPunctuationLikelyIdentifierContext(prevNonSpace Token, hasPrev bool) bool {
+	if !hasPrev || prevNonSpace.Type != Punctuation {
+		return false
+	}
+	switch prevNonSpace.Text {
+	case ",", "(", ".", "=", ":=":
+		return true
+	default:
+		return false
+	}
+}
+
+func mysqlBeginLikelyIdentifier(lastWord string, prevNonSpace Token, hasPrev bool) bool {
+	if mysqlPunctuationLikelyIdentifierContext(prevNonSpace, hasPrev) {
+		return true
+	}
+	if !mysqlImmediatePreviousWordMatches(lastWord, prevNonSpace, hasPrev) {
+		return false
+	}
+	switch strings.ToLower(lastWord) {
+	case "all", "as", "by", "declare", "distinct", "fetch", "from", "having", "in", "inout",
+		"into", "join", "on", "select", "set", "table", "update", "using", "values",
+		"when", "where":
+		return true
+	default:
+		return false
+	}
+}
+
+func mysqlEndLikelyIdentifier(lastWord string, prevNonSpace Token, hasPrev bool) bool {
+	if mysqlPunctuationLikelyIdentifierContext(prevNonSpace, hasPrev) {
+		return true
+	}
+	if !mysqlImmediatePreviousWordMatches(lastWord, prevNonSpace, hasPrev) {
+		return false
+	}
+	switch strings.ToLower(lastWord) {
+	case "all", "as", "by", "declare", "distinct", "else", "fetch", "from", "having",
+		"in", "inout", "into", "join", "on", "select", "set", "table", "update", "using",
+		"values", "when", "where":
+		return true
+	default:
+		return false
+	}
+}
+
 // Tokenize breaks up SQL strings into Token objects.  No attempt is made
 // to break successive punctuation.
 func Tokenize(s string, config Config) Tokens {
@@ -73,16 +139,39 @@ func Tokenize(s string, config Config) Tokens {
 	var delimiterBuffer string
 	var delimiter string
 
-	// Why is this written with Goto you might ask?  It's written
-	// with goto because RE2 can't handle complex regex and PCRE
-	// has external dependencies and thus isn't friendly for libraries.
-	// So, it could have had a switch with a state variable, but that's
-	// just a way to do goto that's lower performance.  Might as
-	// well do goto the natural way.
+	// BEGIN/END block tracking: lastWord is the previous Word in the current statement;
+	// cleared on Delimiter. Used so BEGIN at statement start is a transaction, not a block.
+	var lastWord string
+	var beginEndDepth int
+	// Inside a stored-program body, BEGIN may open a nested compound or be a lone "BEGIN;"
+	// (transaction). Nesting depth stays pending until ';' or the next substantive token; see the
+	// token() and tokenWord closures in this function.
+	var pendingNestedBegin bool
+	// True when pendingNestedBegin was set by BEGIN at statement start (lastWord=="" && depth 0).
+	// Transaction starters are "BEGIN;" / BEGIN WORK / BEGIN TRANSACTION; compound blocks look like
+	// "BEGIN NOT …" (MariaDB) or any other following token at top level (BEGIN then next statement).
+	var pendingBeginFromStmtStart bool
 
 	token := func(t TokenType) {
 		if debug {
 			fmt.Printf("> %s: {%s}\n", t, s[tokenStart:i])
+		}
+		// pendingNestedBegin is only set when NoticeBeginEndBlock is enabled (see tokenWord).
+		if pendingNestedBegin {
+			switch t {
+			case Whitespace, Comment, Empty:
+				// Still resolving after BEGIN: might be "BEGIN;" or "BEGIN ..." compound.
+			case Delimiter:
+				// tokenDelimiter resets pending before calling token(Delimiter).
+			default:
+				if pendingBeginFromStmtStart && beginEndDepth == 0 {
+					pendingNestedBegin = false
+					pendingBeginFromStmtStart = false
+				} else {
+					beginEndDepth++
+					pendingNestedBegin = false
+				}
+			}
 		}
 		if i-tokenStart == 0 {
 			return
@@ -98,6 +187,150 @@ func Tokenize(s string, config Config) Tokens {
 		tokenStart = i
 	}
 
+	prevTokenIsAtSign := func() bool {
+		if len(tokens) == 0 {
+			return false
+		}
+		t := tokens[len(tokens)-1]
+		return t.Type == Punctuation && t.Text == "@"
+	}
+
+	lastNonSpaceToken := func() (Token, bool) {
+		for j := len(tokens) - 1; j >= 0; j-- {
+			switch tokens[j].Type {
+			case Whitespace, Comment, Empty:
+			default:
+				return tokens[j], true
+			}
+		}
+		return Token{}, false
+	}
+
+	// tokenWord handles Word tokens and tracks BEGIN/END blocks
+	tokenWord := func() {
+		var deferPendingBegin bool
+		var beginDeferredFromStmtStart bool
+		if config.NoticeBeginEndBlock {
+			w := s[tokenStart:i]
+			if pendingNestedBegin && len(w) > 0 {
+				if beginTransactionContinuer(w) {
+					pendingNestedBegin = false
+					pendingBeginFromStmtStart = false
+				} else if pendingBeginFromStmtStart && strings.EqualFold(w, "not") {
+					// MariaDB: BEGIN [NOT ATOMIC] … END outside stored programs.
+					beginEndDepth++
+					pendingNestedBegin = false
+					pendingBeginFromStmtStart = false
+				} else if pendingBeginFromStmtStart {
+					// BEGIN then next statement at script start — transaction + following body,
+					// not a BEGIN/END block.
+					pendingNestedBegin = false
+					pendingBeginFromStmtStart = false
+				} else {
+					beginEndDepth++
+					pendingNestedBegin = false
+				}
+			}
+			if len(w) > 0 {
+				// First-byte dispatch avoids ToLower on every word; EqualFold for keywords only.
+				switch w[0] {
+				case 'b', 'B':
+					if strings.EqualFold(w, "begin") {
+						// Not block depth: @begin user var; SELECT begin ... (identifier).
+						// Transaction vs compound: "BEGIN;" (incl. WORK/TRANSACTION) vs "BEGIN NOT …" /
+						// "BEGIN stmt…". Deferred until ';' or the next keyword (see pending flags).
+						if prevTokenIsAtSign() {
+							break
+						}
+						if config.BeginEndWordMode == BeginEndContextual {
+							prevNS, hasPrevNS := lastNonSpaceToken()
+							// the previous word hints at using begin as an identifier
+							// XA BEGIN xid (MySQL-style): second BEGIN is not a compound opener.
+							// Keep this heuristic in contextual mode only.
+							if mysqlBeginLikelyIdentifier(lastWord, prevNS, hasPrevNS) || strings.EqualFold(lastWord, "xa") {
+								break
+							}
+						}
+						deferPendingBegin = true
+						beginDeferredFromStmtStart = lastWord == "" && beginEndDepth == 0
+					}
+				case 'c', 'C':
+					if strings.EqualFold(w, "case") {
+						// CASE ... END - increment so the END doesn't close a BEGIN block
+						// But not for END CASE (closing a CASE statement)
+						if !strings.EqualFold(lastWord, "end") {
+							beginEndDepth++
+						}
+					}
+				case 'e', 'E':
+					if strings.EqualFold(w, "end") {
+						endAsIdent := prevTokenIsAtSign()
+						if config.BeginEndWordMode == BeginEndContextual && !endAsIdent {
+							prevNS, hasPrevNS := lastNonSpaceToken()
+							endAsIdent = mysqlEndLikelyIdentifier(lastWord, prevNS, hasPrevNS)
+						}
+						if beginEndDepth > 0 && !endAsIdent {
+							beginEndDepth--
+						}
+					}
+				case 'i', 'I':
+					if strings.EqualFold(w, "if") {
+						// END IF
+						if strings.EqualFold(lastWord, "end") {
+							beginEndDepth++
+						}
+					}
+				case 'l', 'L':
+					if strings.EqualFold(w, "loop") {
+						// END LOOP
+						if strings.EqualFold(lastWord, "end") {
+							beginEndDepth++
+						}
+					}
+				case 'r', 'R':
+					if strings.EqualFold(w, "repeat") {
+						// END REPEAT
+						if strings.EqualFold(lastWord, "end") {
+							beginEndDepth++
+						}
+					}
+				case 'w', 'W':
+					if strings.EqualFold(w, "while") {
+						// END WHILE
+						if strings.EqualFold(lastWord, "end") {
+							beginEndDepth++
+						}
+					}
+				}
+			}
+			lastWord = w
+		}
+		token(Word)
+		if deferPendingBegin {
+			pendingNestedBegin = true
+			pendingBeginFromStmtStart = beginDeferredFromStmtStart
+		}
+	}
+
+	// tokenDelimiter handles Delimiter tokens and resets block tracking
+	tokenDelimiter := func() {
+		if config.NoticeBeginEndBlock {
+			beginEndDepth = 0
+			lastWord = ""
+			pendingNestedBegin = false
+			pendingBeginFromStmtStart = false
+		}
+		token(Delimiter)
+	}
+
+	// BaseState represents being between tokens. It is the initial state.
+	//
+	// Why is this written with Goto you might ask?  It's written
+	// with goto because RE2 can't handle complex regex and PCRE
+	// has external dependencies and thus isn't friendly for libraries.
+	// So, it could have had a switch with a state variable, but that's
+	// just a way to do goto that's lower performance.  Might as
+	// well do goto the natural way.
 BaseState:
 	for i < stop {
 		c := s[i]
@@ -142,8 +375,18 @@ BaseState:
 		case ';':
 			if config.NoticeDelimiterStatement && delimiter != "" {
 				token(Punctuation)
+			} else if config.NoticeBeginEndBlock && beginEndDepth > 0 {
+				// Sub-statement boundary inside a block: do not reset beginEndDepth, but
+				// clear lastWord so the next statement is not confused with END CASE / etc.
+				// Lone "BEGIN;" clears pendingNestedBegin without adding nested compound depth.
+				if pendingNestedBegin {
+					pendingNestedBegin = false
+					pendingBeginFromStmtStart = false
+				}
+				lastWord = ""
+				token(Punctuation)
 			} else {
-				token(Delimiter)
+				tokenDelimiter()
 			}
 		case '?':
 			if config.NoticeQuestionNumber {
@@ -384,13 +627,13 @@ Word:
 			if config.NoticeIdentifiers {
 				goto Identifier
 			}
-			token(Word)
+			tokenWord()
 			goto BaseState
 		case ' ', '\t':
 			if config.NoticeDelimiterStatement && strings.EqualFold(s[tokenStart:i], "delimiter") && (tokenStart == 0 || s[tokenStart-1] == '\n') {
 				goto DelimiterStatementStart
 			}
-			token(Word)
+			tokenWord()
 			goto BaseState
 		case '\n', '\r', '\b', '\v', '\f',
 			'!', '"' /*#*/ /*$*/, '%', '&' /*'*/, '(', ')', '*', '+', '-', '.', '/',
@@ -398,7 +641,7 @@ Word:
 			'[', '\\', ']', '^' /*_*/, '`',
 			'{', '|', '}', '~':
 			// minor optimization to avoid DecodeRuneInString
-			token(Word)
+			tokenWord()
 			goto BaseState
 		case '\'':
 			if config.NoticeCharsetLiteral && s[tokenStart] == '_' {
@@ -421,10 +664,10 @@ Word:
 			i += w
 			continue
 		}
-		token(Word)
+		tokenWord()
 		goto BaseState
 	}
-	token(Word)
+	tokenWord()
 	goto Done
 
 DelimiterStatementStart:
@@ -454,7 +697,7 @@ DelimiterStatementStart:
 
 NotDelimiter:
 	i = endDelimiterWord
-	token(Word)
+	tokenWord()
 	goto BaseState
 
 DelimiterContinues:
@@ -1222,7 +1465,7 @@ DeliminatedString:
 			'\n', '\r', '\t', '\b', '\v', '\f', ' ':
 			// not a valid delimiter
 			i -= 2
-			token(Word)
+			tokenWord()
 			i++
 			goto SingleQuoteString
 		case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -1247,7 +1490,7 @@ DeliminatedString:
 			goto DeliminatedStringRune
 		}
 	}
-	token(Word)
+	tokenWord()
 	goto Done
 
 DeliminatedStringCharacter:
@@ -1389,7 +1632,7 @@ Done:
 		} else if i+len(delimiter) <= len(s) {
 			if s[i:i+len(delimiter)] == delimiter {
 				i += len(delimiter)
-				token(Delimiter)
+				tokenDelimiter()
 				goto DelimiterSearchStart
 			}
 		}
