@@ -2,6 +2,7 @@ package sqltoken
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -1786,6 +1787,38 @@ var singleStoreBeginEndCases = []Tokens{
 		{Type: Word, Text: "SELECT"},
 		{Type: Whitespace, Text: " "},
 		{Type: Number, Text: "91001"},
+		{Type: Delimiter, Text: ";"},
+	},
+	// s2_func_decl_95017: CREATE FUNCTION establishes routine context before BEGIN
+	{
+		{Type: Word, Text: "CREATE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "FUNCTION"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "s2_func_decl_95017"},
+		{Type: Punctuation, Text: "()"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "RETURNS"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "INT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "AS"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "DECLARE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "v_95017"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "INT"},
+		{Type: Punctuation, Text: ";"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "BEGIN"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "RETURN"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "v_95017"},
+		{Type: Punctuation, Text: ";"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "END"},
 		{Type: Delimiter, Text: ";"},
 	},
 	// standalone_begin: simple BEGIN; should not start a block
@@ -3699,4 +3732,69 @@ func TestSingleStoreBeginEndBlock(t *testing.T) {
 
 func TestMySQLBeginEndBlock(t *testing.T) {
 	doTests(t, "mysqlbegin_", MySQLAPIConfig(), mySQLBeginEndCases)
+}
+
+func TestSingleStoreAPIPreservesDeclareSectionAcrossNormalization(t *testing.T) {
+	sqlText := `
+DELIMITER //
+CREATE FUNCTION s2_decl_block_95016(a INT, b INT, c VARCHAR(40))
+RETURNS ARRAY(INT) AS
+DECLARE
+  arr ARRAY(INT);
+  tmp ARRAY(INT);
+  kind VARCHAR(20);
+  step_n INT;
+BEGIN
+  IF c REGEXP 'STEP [0-9]+' = 1 THEN
+    kind = 'step';
+    step_n = CAST(1 AS UNSIGNED);
+  ELSE
+    RETURN CREATE_ARRAY(0);
+  END IF;
+  RETURN arr;
+END //
+DELIMITER ;
+`
+
+	// Step 1: mirror helios normalization using delimiter-aware tokenizer.
+	normalizedParts := make([]string, 0)
+	for _, stmt := range TokenizeSingleStore(sqlText).CmdSplitUnstripped() {
+		for len(stmt) > 0 {
+			first := stmt[0].Type
+			if first == DelimiterStatement || first == Comment || first == Whitespace || first == Empty {
+				stmt = stmt[1:]
+				continue
+			}
+			break
+		}
+		for len(stmt) > 0 {
+			last := stmt[len(stmt)-1].Type
+			if last == Delimiter || last == DelimiterStatement || last == Comment || last == Whitespace {
+				stmt = stmt[:len(stmt)-1]
+				continue
+			}
+			break
+		}
+		if len(stmt) == 0 {
+			continue
+		}
+		normalizedParts = append(normalizedParts, stmt.String())
+	}
+	normalizedSQL := strings.Join(normalizedParts, ";\n")
+
+	// Step 2: API tokenization should still yield one statement for this function.
+	apiSplit := TokenizeSingleStoreAPI(normalizedSQL).CmdSplitUnstripped()
+	nonEmpty := make([]Tokens, 0, len(apiSplit))
+	for _, stmt := range apiSplit {
+		if len(stmt.Strip()) > 0 {
+			nonEmpty = append(nonEmpty, stmt)
+		}
+	}
+	if assert.Len(t, nonEmpty, 1) {
+		s := nonEmpty[0].String()
+		assert.Contains(t, s, "DECLARE")
+		assert.Contains(t, s, "step_n INT;")
+		assert.Contains(t, s, "BEGIN")
+		assert.Contains(t, s, "END")
+	}
 }

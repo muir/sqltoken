@@ -96,6 +96,7 @@ func mysqlBeginLikelyIdentifier(lastWord string, prevNonSpace Token, hasPrev boo
 		return false
 	}
 	switch strings.ToLower(lastWord) {
+	// These are all reserved words
 	case "all", "as", "by", "declare", "distinct", "fetch", "from", "having", "in", "inout",
 		"into", "join", "on", "select", "set", "table", "update", "using", "values",
 		"when", "where":
@@ -151,6 +152,14 @@ func Tokenize(s string, config Config) Tokens {
 	// Transaction starters are "BEGIN;" / BEGIN WORK / BEGIN TRANSACTION; compound blocks look like
 	// "BEGIN NOT …" (MariaDB) or any other following token at top level (BEGIN then next statement).
 	var pendingBeginFromStmtStart bool
+	var lastWordIsCreateOrReplace bool
+	// Tracks CREATE ... FUNCTION/PROCEDURE/TRIGGER/EVENT definitions so we can
+	// preserve semicolons inside routine definitions in reserved-word mode.
+	var inRoutineDefinition bool
+	// true after the first routine-body BEGIN has been seen.
+	var routineBodyStarted bool
+	// SingleStore routine-root handling is only relevant in reserved-word mode.
+	useRoutineDeclareHeuristic := config.BeginEndWordMode == BeginEndReserved
 
 	token := func(t TokenType) {
 		if debug {
@@ -212,6 +221,41 @@ func Tokenize(s string, config Config) Tokens {
 		var beginDeferredFromStmtStart bool
 		if config.NoticeBeginEndBlock {
 			w := s[tokenStart:i]
+			if useRoutineDeclareHeuristic && len(w) > 0 && beginEndDepth == 0 && lastWordIsCreateOrReplace {
+				// Routine-root detection: CREATE/REPLACE + FUNCTION/PROCEDURE/TRIGGER/EVENT
+				// starts a routine context before BEGIN appears.
+				// First-byte dispatch keeps this check cheap for non-routine words.
+				switch w[0] {
+				case 'f', 'F':
+					// note: "function" is a reserved word in SingleStore, but "@function" is allowed; "function" is reserved in MySQL
+					if strings.EqualFold(w, "function") {
+						inRoutineDefinition = true
+						routineBodyStarted = false
+						beginEndDepth = 1
+					}
+				case 'p', 'P':
+					// note: "procedure" is a reserved word in SingleStore, but "@procedure" is allowed; "procedure" is reserved in MySQL
+					if strings.EqualFold(w, "procedure") {
+						inRoutineDefinition = true
+						routineBodyStarted = false
+						beginEndDepth = 1
+					}
+				case 't', 'T':
+					// note: "trigger" is a reserved word in SingleStore, but "@trigger" is allowed; "trigger" is reserved in MySQL
+					if strings.EqualFold(w, "trigger") {
+						inRoutineDefinition = true
+						routineBodyStarted = false
+						beginEndDepth = 1
+					}
+				case 'e', 'E':
+					// note: "event" is a reserved word in SingleStore, but "@event" is allowed; "event" is NOT reserved in MySQL
+					if strings.EqualFold(w, "event") {
+						inRoutineDefinition = true
+						routineBodyStarted = false
+						beginEndDepth = 1
+					}
+				}
+			}
 			if pendingNestedBegin && len(w) > 0 {
 				if beginTransactionContinuer(w) {
 					pendingNestedBegin = false
@@ -235,7 +279,17 @@ func Tokenize(s string, config Config) Tokens {
 				// First-byte dispatch avoids ToLower on every word; EqualFold for keywords only.
 				switch w[0] {
 				case 'b', 'B':
+					// note: "begin" is a reserved word in SingleStore, but "@begin" is allowed; "begin" is NOT reserved in MySQL
 					if strings.EqualFold(w, "begin") {
+						if useRoutineDeclareHeuristic && inRoutineDefinition {
+							// First BEGIN is the routine body start; later BEGIN opens nested compounds.
+							if !routineBodyStarted {
+								routineBodyStarted = true
+							} else {
+								beginEndDepth++
+							}
+							break
+						}
 						// Not block depth: @begin user var; SELECT begin ... (identifier).
 						// Transaction vs compound: "BEGIN;" (incl. WORK/TRANSACTION) vs "BEGIN NOT …" /
 						// "BEGIN stmt…". Deferred until ';' or the next keyword (see pending flags).
@@ -255,6 +309,7 @@ func Tokenize(s string, config Config) Tokens {
 						beginDeferredFromStmtStart = lastWord == "" && beginEndDepth == 0
 					}
 				case 'c', 'C':
+					// note: "case" is a reserved word in SingleStore; "case" is reserved in MySQL
 					if strings.EqualFold(w, "case") {
 						// CASE ... END - increment so the END doesn't close a BEGIN block
 						// But not for END CASE (closing a CASE statement)
@@ -263,6 +318,7 @@ func Tokenize(s string, config Config) Tokens {
 						}
 					}
 				case 'e', 'E':
+					// note: "end" is a reserved word in SingleStore, but "@end" is allowed; "end" is NOT reserved in MySQL
 					if strings.EqualFold(w, "end") {
 						endAsIdent := prevTokenIsAtSign()
 						if config.BeginEndWordMode == BeginEndContextual && !endAsIdent {
@@ -271,9 +327,14 @@ func Tokenize(s string, config Config) Tokens {
 						}
 						if beginEndDepth > 0 && !endAsIdent {
 							beginEndDepth--
+							if useRoutineDeclareHeuristic && inRoutineDefinition && beginEndDepth == 0 {
+								inRoutineDefinition = false
+								routineBodyStarted = false
+							}
 						}
 					}
 				case 'i', 'I':
+					// note: "if" is a reserved word in SingleStore, but "@if" is allowed; "if" is reserved in MySQL
 					if strings.EqualFold(w, "if") {
 						// END IF
 						if strings.EqualFold(lastWord, "end") {
@@ -281,6 +342,7 @@ func Tokenize(s string, config Config) Tokens {
 						}
 					}
 				case 'l', 'L':
+					// note: "loop" is a reserved word in SingleStore, but "@loop" is allowed; "loop" is reserved in MySQL
 					if strings.EqualFold(w, "loop") {
 						// END LOOP
 						if strings.EqualFold(lastWord, "end") {
@@ -288,6 +350,7 @@ func Tokenize(s string, config Config) Tokens {
 						}
 					}
 				case 'r', 'R':
+					// note: "repeat" is a reserved word in SingleStore, but "@repeat" is allowed; "repeat" is reserved in MySQL
 					if strings.EqualFold(w, "repeat") {
 						// END REPEAT
 						if strings.EqualFold(lastWord, "end") {
@@ -295,6 +358,7 @@ func Tokenize(s string, config Config) Tokens {
 						}
 					}
 				case 'w', 'W':
+					// note: "while" is a reserved word in SingleStore, but "@while" is allowed; "while" is reserved in MySQL
 					if strings.EqualFold(w, "while") {
 						// END WHILE
 						if strings.EqualFold(lastWord, "end") {
@@ -304,6 +368,19 @@ func Tokenize(s string, config Config) Tokens {
 				}
 			}
 			lastWord = w
+			if useRoutineDeclareHeuristic {
+				lastWordIsCreateOrReplace = false
+				if len(w) > 0 {
+					switch w[0] {
+					case 'c', 'C':
+						// note: "create" is a reserved word in SingleStore, but "@create" is allowed; "create" is reserved in MySQL
+						lastWordIsCreateOrReplace = strings.EqualFold(w, "create")
+					case 'r', 'R':
+						// note: "replace" is a reserved word in SingleStore, but "@replace" is allowed; "replace" is reserved in MySQL
+						lastWordIsCreateOrReplace = strings.EqualFold(w, "replace")
+					}
+				}
+			}
 		}
 		token(Word)
 		if deferPendingBegin {
@@ -317,8 +394,11 @@ func Tokenize(s string, config Config) Tokens {
 		if config.NoticeBeginEndBlock {
 			beginEndDepth = 0
 			lastWord = ""
+			lastWordIsCreateOrReplace = false
 			pendingNestedBegin = false
 			pendingBeginFromStmtStart = false
+			inRoutineDefinition = false
+			routineBodyStarted = false
 		}
 		token(Delimiter)
 	}
@@ -384,6 +464,7 @@ BaseState:
 					pendingBeginFromStmtStart = false
 				}
 				lastWord = ""
+				lastWordIsCreateOrReplace = false
 				token(Punctuation)
 			} else {
 				tokenDelimiter()
