@@ -1,21 +1,34 @@
 package sqltoken
 
+type BeginEndWordMode int
+
+const (
+	// BeginEndContextual treats BEGIN/END as context-dependent words that may be identifiers.
+	//
+	// WARNING: contextual detection is heuristic, not a full SQL parser. It is good for common
+	// procedural SQL, but bareword identifiers named begin/end can still be ambiguous and may be
+	// misclassified in edge cases. Prefer quoted identifiers (`begin`, `end`) when possible.
+	BeginEndContextual BeginEndWordMode = iota
+	// BeginEndReserved treats BEGIN/END as reserved keywords unless explicitly quoted/escaped.
+	BeginEndReserved
+)
+
 // Config specifies the behavior of Tokenize as relates to behavior
 // that differs between SQL implementations
 type Config struct {
 	// Tokenize ? as type Question (used by MySQL, SQLite)
 	NoticeQuestionMark bool
 
-	// Tokenize ?1 as type Question; implies NoticeQuestionMark (used by SQLite)
+	// Tokenize ?<digits> (eg: "?7") as type Question (used by SQLite)
 	NoticeQuestionNumber bool
 
-	// Tokenize $7 as type DollarNumber (PostgreSQL, SQLite)
+	// Tokenize $<digits> (eg "$7") as type DollarNumber (PostgreSQL, SQLite)
 	NoticeDollarNumber bool
 
 	// Tokenize :word as type ColonWord (sqlx, Oracle, SQLite)
 	NoticeColonWord bool
 
-	// Tokenize :word with unicode as ColonWord (sqlx, SQlite)
+	// Tokenize :word with unicode as ColonWord (sqlx, SQLite)
 	ColonWordIncludesUnicode bool
 
 	// Tokenize # as type comment (MySQL)
@@ -72,6 +85,19 @@ type Config struct {
 	// if that's in the middle of a block that the client knows isn't the start of a
 	// statement
 	NoticeDelimiterStatement bool
+
+	// NoticeBeginEndBlock tracks BEGIN/END block nesting for stored procedures,
+	// functions, and triggers. When inside a block, semicolons are treated as
+	// punctuation rather than statement delimiters. This is useful when DELIMITER
+	// is not available (e.g., when sending SQL directly to database/sql drivers).
+	// This option is mutually exclusive with NoticeDelimiterStatement in practice:
+	// use NoticeDelimiterStatement for parsing SQL files that use DELIMITER syntax,
+	// use NoticeBeginEndBlock for SQL going directly to drivers.
+	NoticeBeginEndBlock bool
+
+	// BeginEndWordMode controls whether BEGIN/END are interpreted contextually
+	// (e.g. MySQL/MariaDB) or as reserved keywords (e.g. SingleStore).
+	BeginEndWordMode BeginEndWordMode
 }
 
 // WithNoticeQuestionMark enables parsing question marks using the QuestionMark token
@@ -80,7 +106,7 @@ func (c Config) WithNoticeQuestionMark() Config {
 	return c
 }
 
-// WithNoticeQuestionNumber enables parsing question marks followed by a number (?1) for SQLite.
+// WithNoticeQuestionNumber enables parsing numbered question marks (?<digits>) using the QuestionMark token.
 func (c Config) WithNoticeQuestionNumber() Config {
 	c.NoticeQuestionNumber = true
 	return c
@@ -202,8 +228,32 @@ func (c Config) WithSeparatePunctuation() Config {
 	return c
 }
 
+// WithNoticeDelimiterStatement enables recognition of custom statement delimiters
+// (e.g., DELIMITER // ... DELIMITER ;). This is mutually exclusive with
+// NoticeBeginEndBlock - enabling this disables BEGIN/END block tracking.
 func (c Config) WithNoticeDelimiterStatement() Config {
 	c.NoticeDelimiterStatement = true
+	c.NoticeBeginEndBlock = false
+	return c
+}
+
+// WithNoticeBeginEndBlock enables tracking of BEGIN/END blocks for stored
+// procedures, functions, and triggers. Semicolons inside blocks are treated
+// as punctuation rather than statement delimiters. This is mutually exclusive
+// with NoticeDelimiterStatement - enabling this disables DELIMITER recognition.
+func (c Config) WithNoticeBeginEndBlock() Config {
+	c.NoticeBeginEndBlock = true
+	c.NoticeDelimiterStatement = false
+	return c
+}
+
+// WithBeginEndWordMode sets how BEGIN/END words are interpreted while block
+// tracking is enabled.
+//
+// For BeginEndContextual, use quoted identifiers if you have tables/columns/variables named
+// begin/end and need deterministic behavior in all edge cases.
+func (c Config) WithBeginEndWordMode(mode BeginEndWordMode) Config {
+	c.BeginEndWordMode = mode
 	return c
 }
 
@@ -241,7 +291,8 @@ func SQLServerConfig() Config {
 }
 
 // MySQLConfig returns a parsing configuration that is appropriate
-// for parsing MySQL and MariaDB SQL.
+// for parsing MySQL and MariaDB SQL. This includes support for DELIMITER and
+// is compatible with the mysql client.
 func MySQLConfig() Config {
 	return Config{}.
 		WithNoticeQuestionMark().
@@ -254,8 +305,29 @@ func MySQLConfig() Config {
 		WithNoticeDelimiterStatement()
 }
 
+// MySQLAPIConfig returns a parsing configuration that is appropriate
+// for parsing MySQL and MariaDB SQL sent through driver APIs. This enables
+// BEGIN/END block tracking with contextual begin/end detection.
+//
+// WARNING: contextual begin/end handling is heuristic (not a full parser).
+// If your SQL uses bareword identifiers named begin/end, quote them for
+// predictable tokenization in all cases.
+func MySQLAPIConfig() Config {
+	return Config{}.
+		WithNoticeQuestionMark().
+		WithNoticeHashComment().
+		WithNoticeHexNumbers().
+		WithNoticeBinaryNumbers().
+		WithNoticeCharsetLiteral().
+		WithNoticeNationalPrefix().
+		WithNoticeLiteralBackslashEscape().
+		WithNoticeBeginEndBlock().
+		WithBeginEndWordMode(BeginEndContextual)
+}
+
 // SingleStoreConfig returns a parsing configuration that is appropriate
-// for parsing SingleStore SQL.
+// for parsing SingleStore SQL. This includes support for DELIMITER and
+// is compatible with the mysql/singlestore client.
 func SingleStoreConfig() Config {
 	return Config{}.
 		WithNoticeQuestionMark().
@@ -266,6 +338,22 @@ func SingleStoreConfig() Config {
 		WithNoticeLiteralBackslashEscape().
 		WithNoticeEscapedStrings().
 		WithNoticeDelimiterStatement()
+}
+
+// SingleStoreAPIConfig returns a parsing configuration that is appropriate
+// for parsing SingleStore SQL sent through driver APIs. This enables
+// BEGIN/END block tracking (instead of DELIMITER statement handling).
+func SingleStoreAPIConfig() Config {
+	return Config{}.
+		WithNoticeQuestionMark().
+		WithNoticeHashComment().
+		WithNoticeHexNumbers().
+		WithNoticeBinaryNumbers().
+		WithNoticeCharsetLiteral().
+		WithNoticeLiteralBackslashEscape().
+		WithNoticeEscapedStrings().
+		WithNoticeBeginEndBlock().
+		WithBeginEndWordMode(BeginEndReserved)
 }
 
 // PostgreSQLConfig returns a parsing configuration that is appropriate
@@ -279,17 +367,15 @@ func PostgreSQLConfig() Config {
 		WithNoticeEscapedStrings()
 }
 
-// SQLiteConfig returns a parsing configuration that is appropriate for parsing
-// SQLite SQL.
+// SQLiteConfig returns a parsing configuration that is appropriate for SQLite SQL.
 func SQLiteConfig() Config {
 	return Config{}.
-		WithNoticeQuestionNumber().
 		WithNoticeQuestionMark().
+		WithNoticeQuestionNumber().
 		WithNoticeColonWord().
 		WithColonWordIncludesUnicode().
 		WithNoticeAtWord().
 		WithNoticeDollarNumber()
-
 }
 
 // TokenizeMySQL breaks up MySQL / MariaDB strings into
@@ -298,10 +384,22 @@ func TokenizeMySQL(s string) Tokens {
 	return Tokenize(s, MySQLConfig())
 }
 
+// TokenizeMySQLAPI breaks up MySQL / MariaDB strings into
+// Token objects. Uses BEGIN/END block tracking for stored procedures.
+func TokenizeMySQLAPI(s string) Tokens {
+	return Tokenize(s, MySQLAPIConfig())
+}
+
 // TokenizeSingleStore breaks up SingleStore SQL strings into
 // Token objects.
 func TokenizeSingleStore(s string) Tokens {
 	return Tokenize(s, SingleStoreConfig())
+}
+
+// TokenizeSingleStoreAPI breaks up SingleStore SQL strings into
+// Token objects. Uses BEGIN/END block tracking for stored procedures.
+func TokenizeSingleStoreAPI(s string) Tokens {
+	return Tokenize(s, SingleStoreAPIConfig())
 }
 
 // TokenizePostgreSQL breaks up PostgreSQL / CockroachDB SQL strings into
