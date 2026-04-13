@@ -2173,6 +2173,39 @@ var singleStoreBeginEndCases = []Tokens{
 		{Type: Number, Text: "99"},
 		{Type: Delimiter, Text: ";"}, // outside block
 	},
+	// s2_txn_begin_inside: transaction BEGIN; inside AS BEGIN body — must not increment block depth.
+	// When the second BEGIN is followed immediately by ';', it is a transaction starter, not a
+	// compound block opener.  The bug: the routine heuristic unconditionally increments
+	// beginEndDepth for every non-first BEGIN, so the procedure END; never reaches depth 0 and
+	// subsequent statements are not split correctly.
+	{
+		{Type: Word, Text: "CREATE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "PROCEDURE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "s2_txn_begin_inside"},
+		{Type: Punctuation, Text: "()"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "AS"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "BEGIN"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "BEGIN"},
+		{Type: Punctuation, Text: ";"}, // transaction start — must be Punctuation (inside block), not start nested compound
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Punctuation, Text: ";"}, // inside block
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "END"},
+		{Type: Delimiter, Text: ";"}, // closes procedure block — must be Delimiter
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "99"},
+		{Type: Delimiter, Text: ";"}, // outside block — verifies depth fully unwound
+	},
 }
 
 // BEGIN/END block tracking test cases for MySQL stored programs that use the ") BEGIN" body form
