@@ -33,8 +33,9 @@ const (
 const Semicolon = Delimiter // Deprecated: for backwards compatibility only
 
 type Token struct {
-	Type TokenType
-	Text string
+	DebugExtra // defined in debug_true.go and debug_false.go; go test -tags debugSQLToken -failfast
+	Type       TokenType
+	Text       string
 	// Split is set on the last token in a Tokens after CmdSplit/CmdSplitUnstripped
 	// to capture the ; discarded by splitting.
 	// Do not set manually.
@@ -53,8 +54,6 @@ func (t Token) Copy() Token {
 type Tokens []Token
 
 type TokensList []Tokens
-
-const debug = false
 
 // beginTransactionContinuer reports the word that may immediately follow BEGIN for
 // BEGIN WORK / BEGIN TRANSACTION-style transaction starters (not a nested compound).
@@ -144,26 +143,37 @@ func Tokenize(s string, config Config) Tokens {
 	// cleared on Delimiter. Used so BEGIN at statement start is a transaction, not a block.
 	var lastWord string
 	var beginEndDepth int
+
 	// Inside a stored-program body, BEGIN may open a nested compound or be a lone "BEGIN;"
 	// (transaction). Nesting depth stays pending until ';' or the next substantive token; see the
 	// token() and tokenWord closures in this function.
 	var pendingNestedBegin bool
+
 	// True when pendingNestedBegin was set by BEGIN at statement start (lastWord=="" && depth 0).
 	// Transaction starters are "BEGIN;" / BEGIN WORK / BEGIN TRANSACTION; compound blocks look like
 	// "BEGIN NOT …" (MariaDB) or any other following token at top level (BEGIN then next statement).
 	var pendingBeginFromStmtStart bool
+
 	var lastWordIsCreateOrReplace bool
+
+	// SingleStore only.
 	// Tracks CREATE ... FUNCTION/PROCEDURE/TRIGGER/EVENT definitions so we can
 	// preserve semicolons inside routine definitions in reserved-word mode.
 	var inRoutineDefinition bool
+
+	// SingleStore only.
 	// true after the first routine-body BEGIN has been seen.
 	var routineBodyStarted bool
+
 	// SingleStore routine-root handling is only relevant in reserved-word mode.
 	useRoutineDeclareHeuristic := config.BeginEndWordMode == BeginEndReserved
 
 	token := func(t TokenType) {
 		if debug {
 			fmt.Printf("> %s: {%s}\n", t, s[tokenStart:i])
+		}
+		if i-tokenStart == 0 {
+			return
 		}
 		// pendingNestedBegin is only set when NoticeBeginEndBlock is enabled (see tokenWord).
 		if pendingNestedBegin {
@@ -172,6 +182,23 @@ func Tokenize(s string, config Config) Tokens {
 				// Still resolving after BEGIN: might be "BEGIN;" or "BEGIN ..." compound.
 			case Delimiter:
 				// tokenDelimiter resets pending before calling token(Delimiter).
+			case Punctuation:
+				if s[tokenStart:i] == ";" {
+					// BEGIN; -- a transaction
+					pendingNestedBegin = false
+					pendingBeginFromStmtStart = false
+				}
+			case Word:
+				switch {
+				case pendingBeginFromStmtStart && beginEndDepth == 0:
+					pendingNestedBegin = false
+					pendingBeginFromStmtStart = false
+				case strings.EqualFold(s[tokenStart:i], "begin"):
+					// leave as is
+				default:
+					beginEndDepth++
+					pendingNestedBegin = false
+				}
 			default:
 				if pendingBeginFromStmtStart && beginEndDepth == 0 {
 					pendingNestedBegin = false
@@ -182,9 +209,6 @@ func Tokenize(s string, config Config) Tokens {
 				}
 			}
 		}
-		if i-tokenStart == 0 {
-			return
-		}
 		if len(tokens) > 0 && tokens[len(tokens)-1].Type == t && config.combineOkay(t) {
 			tokens[len(tokens)-1].Text = s[tokenStart-len(tokens[len(tokens)-1].Text) : i]
 		} else {
@@ -194,6 +218,28 @@ func Tokenize(s string, config Config) Tokens {
 			})
 		}
 		tokenStart = i
+		if debug {
+			var extra []string
+			if inRoutineDefinition {
+				extra = append(extra, "inRoutineDefinition")
+			}
+			if routineBodyStarted {
+				extra = append(extra, "routineBodyStarted")
+			}
+			if lastWordIsCreateOrReplace {
+				extra = append(extra, "lastWordIsCreateOrReplace")
+			}
+			if pendingNestedBegin {
+				extra = append(extra, "pendingNestedBegin")
+			}
+			if pendingBeginFromStmtStart {
+				extra = append(extra, "pendingBeginFromStmtStart")
+			}
+			if beginEndDepth > 0 {
+				extra = append(extra, fmt.Sprintf("beginEndDepth=%d", beginEndDepth))
+			}
+			tokens[len(tokens)-1].SetDebug(strings.Join(extra, " "))
+		}
 	}
 
 	prevTokenIsAtSign := func() bool {
@@ -227,28 +273,28 @@ func Tokenize(s string, config Config) Tokens {
 				// First-byte dispatch keeps this check cheap for non-routine words.
 				switch w[0] {
 				case 'f', 'F':
-					// note: "function" is a reserved word in SingleStore, but "@function" is allowed; "function" is reserved in MySQL
+					// note: "function" is a reserved word in SingleStore, but "@function" is allowed
 					if strings.EqualFold(w, "function") {
 						inRoutineDefinition = true
 						routineBodyStarted = false
 						beginEndDepth = 1
 					}
 				case 'p', 'P':
-					// note: "procedure" is a reserved word in SingleStore, but "@procedure" is allowed; "procedure" is reserved in MySQL
+					// note: "procedure" is a reserved word in SingleStore, but "@procedure" is allowed
 					if strings.EqualFold(w, "procedure") {
 						inRoutineDefinition = true
 						routineBodyStarted = false
 						beginEndDepth = 1
 					}
 				case 't', 'T':
-					// note: "trigger" is a reserved word in SingleStore, but "@trigger" is allowed; "trigger" is reserved in MySQL
+					// note: "trigger" is a reserved word in SingleStore, but "@trigger" is allowed
 					if strings.EqualFold(w, "trigger") {
 						inRoutineDefinition = true
 						routineBodyStarted = false
 						beginEndDepth = 1
 					}
 				case 'e', 'E':
-					// note: "event" is a reserved word in SingleStore, but "@event" is allowed; "event" is NOT reserved in MySQL
+					// note: "event" is a reserved word in SingleStore, but "@event" is allowed
 					if strings.EqualFold(w, "event") {
 						inRoutineDefinition = true
 						routineBodyStarted = false
@@ -282,11 +328,12 @@ func Tokenize(s string, config Config) Tokens {
 					// note: "begin" is a reserved word in SingleStore, but "@begin" is allowed; "begin" is NOT reserved in MySQL
 					if strings.EqualFold(w, "begin") {
 						if useRoutineDeclareHeuristic && inRoutineDefinition {
+							// SingleStore
 							// First BEGIN is the routine body start; later BEGIN opens nested compounds.
 							if !routineBodyStarted {
 								routineBodyStarted = true
 							} else {
-								beginEndDepth++
+								pendingNestedBegin = true
 							}
 							break
 						}

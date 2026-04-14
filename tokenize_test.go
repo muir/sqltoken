@@ -1693,7 +1693,15 @@ func doTests(t *testing.T, prefix string, config Config, cases ...[]Tokens) {
 				t.Log(text)
 				t.Log("-----------------")
 				got := Tokenize(text, config)
-				if !assert.Equal(t, text, got.String(), tc.String()) || !assert.Equal(t, tc, got, tc.String()) {
+				stripDebug := func(tokens Tokens) Tokens {
+					n := make([]Token, len(tokens))
+					copy(n, tokens)
+					for i := range n {
+						n[i].SetDebug("")
+					}
+					return n
+				}
+				if !assert.Equal(t, text, got.String(), tc.String()) || !assert.Equal(t, tc, stripDebug(got), tc.String()) {
 					dumpTokens(t, "want", tc)
 					dumpTokens(t, "got", got)
 				}
