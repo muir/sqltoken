@@ -2,6 +2,7 @@ package sqltoken
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -1692,7 +1693,15 @@ func doTests(t *testing.T, prefix string, config Config, cases ...[]Tokens) {
 				t.Log(text)
 				t.Log("-----------------")
 				got := Tokenize(text, config)
-				if !assert.Equal(t, text, got.String(), tc.String()) || !assert.Equal(t, tc, got, tc.String()) {
+				stripDebug := func(tokens Tokens) Tokens {
+					n := make([]Token, len(tokens))
+					copy(n, tokens)
+					for i := range n {
+						n[i].SetDebug("")
+					}
+					return n
+				}
+				if !assert.Equal(t, text, got.String(), tc.String()) || !assert.Equal(t, tc, stripDebug(got), tc.String()) {
 					dumpTokens(t, "want", tc)
 					dumpTokens(t, "got", got)
 				}
@@ -1786,6 +1795,38 @@ var singleStoreBeginEndCases = []Tokens{
 		{Type: Word, Text: "SELECT"},
 		{Type: Whitespace, Text: " "},
 		{Type: Number, Text: "91001"},
+		{Type: Delimiter, Text: ";"},
+	},
+	// s2_func_decl_95017: CREATE FUNCTION establishes routine context before BEGIN
+	{
+		{Type: Word, Text: "CREATE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "FUNCTION"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "s2_func_decl_95017"},
+		{Type: Punctuation, Text: "()"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "RETURNS"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "INT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "AS"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "DECLARE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "v_95017"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "INT"},
+		{Type: Punctuation, Text: ";"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "BEGIN"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "RETURN"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "v_95017"},
+		{Type: Punctuation, Text: ";"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "END"},
 		{Type: Delimiter, Text: ";"},
 	},
 	// standalone_begin: simple BEGIN; should not start a block
@@ -1993,6 +2034,185 @@ var singleStoreBeginEndCases = []Tokens{
 		{Type: Whitespace, Text: " "},
 		{Type: Word, Text: "END"},
 		{Type: Delimiter, Text: ";"}, // closes second block
+	},
+	// s2_end_if_body: END IF inside procedure body — semicolons after END IF must remain Punctuation
+	// This exercises the transient depth 1→0→1 caused by END IF at the outer-block level.
+	{
+		{Type: Word, Text: "CREATE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "PROCEDURE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "s2_end_if_body"},
+		{Type: Punctuation, Text: "()"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "AS"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "BEGIN"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "IF"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Punctuation, Text: "="},
+		{Type: Number, Text: "1"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "THEN"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Punctuation, Text: ";"}, // inside block, inside IF branch
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "END"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "IF"},
+		{Type: Punctuation, Text: ";"}, // still inside outer block — must be Punctuation, not Delimiter
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "2"},
+		{Type: Punctuation, Text: ";"}, // still inside outer block
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "END"},
+		{Type: Delimiter, Text: ";"}, // closes outer block
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "99"},
+		{Type: Delimiter, Text: ";"}, // outside block — verifies depth fully unwound
+	},
+	// s2_end_while_body: END WHILE inside procedure body — same transient depth concern as END IF
+	{
+		{Type: Word, Text: "CREATE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "PROCEDURE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "s2_end_while_body"},
+		{Type: Punctuation, Text: "()"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "AS"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "BEGIN"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "WHILE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Punctuation, Text: "="},
+		{Type: Number, Text: "1"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "DO"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Punctuation, Text: ";"}, // inside block, inside WHILE body
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "END"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "WHILE"},
+		{Type: Punctuation, Text: ";"}, // still inside outer block — must be Punctuation
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "2"},
+		{Type: Punctuation, Text: ";"}, // still inside outer block
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "END"},
+		{Type: Delimiter, Text: ";"}, // closes outer block
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "99"},
+		{Type: Delimiter, Text: ";"}, // outside block
+	},
+	// s2_decl_end_if_body: AS DECLARE … BEGIN with END IF inside body — combined regression
+	{
+		{Type: Word, Text: "CREATE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "FUNCTION"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "s2_decl_end_if_body"},
+		{Type: Punctuation, Text: "()"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "RETURNS"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "INT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "AS"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "DECLARE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "v"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "INT"},
+		{Type: Punctuation, Text: ";"}, // DECLARE section semicolon — Punctuation
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "BEGIN"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "IF"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "v"},
+		{Type: Whitespace, Text: " "},
+		{Type: Punctuation, Text: ">"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "0"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "THEN"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "RETURN"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Punctuation, Text: ";"}, // inside block, inside IF
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "END"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "IF"},
+		{Type: Punctuation, Text: ";"}, // still inside outer block — must be Punctuation
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "RETURN"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "0"},
+		{Type: Punctuation, Text: ";"}, // still inside outer block
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "END"},
+		{Type: Delimiter, Text: ";"}, // closes outer block
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "99"},
+		{Type: Delimiter, Text: ";"}, // outside block
+	},
+	// s2_txn_begin_inside: transaction BEGIN; inside AS BEGIN body — must not increment block depth.
+	// When the second BEGIN is followed immediately by ';', it is a transaction starter, not a
+	// compound block opener.  The bug: the routine heuristic unconditionally increments
+	// beginEndDepth for every non-first BEGIN, so the procedure END; never reaches depth 0 and
+	// subsequent statements are not split correctly.
+	{
+		{Type: Word, Text: "CREATE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "PROCEDURE"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "s2_txn_begin_inside"},
+		{Type: Punctuation, Text: "()"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "AS"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "BEGIN"},
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "BEGIN"},
+		{Type: Punctuation, Text: ";"}, // transaction start — must be Punctuation (inside block), not start nested compound
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "1"},
+		{Type: Punctuation, Text: ";"}, // inside block
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "END"},
+		{Type: Delimiter, Text: ";"}, // closes procedure block — must be Delimiter
+		{Type: Whitespace, Text: " "},
+		{Type: Word, Text: "SELECT"},
+		{Type: Whitespace, Text: " "},
+		{Type: Number, Text: "99"},
+		{Type: Delimiter, Text: ";"}, // outside block — verifies depth fully unwound
 	},
 }
 
@@ -3699,4 +3919,69 @@ func TestSingleStoreBeginEndBlock(t *testing.T) {
 
 func TestMySQLBeginEndBlock(t *testing.T) {
 	doTests(t, "mysqlbegin_", MySQLAPIConfig(), mySQLBeginEndCases)
+}
+
+func TestSingleStoreAPIPreservesDeclareSectionAcrossNormalization(t *testing.T) {
+	sqlText := `
+DELIMITER //
+CREATE FUNCTION s2_decl_block_95016(a INT, b INT, c VARCHAR(40))
+RETURNS ARRAY(INT) AS
+DECLARE
+  arr ARRAY(INT);
+  tmp ARRAY(INT);
+  kind VARCHAR(20);
+  step_n INT;
+BEGIN
+  IF c REGEXP 'STEP [0-9]+' = 1 THEN
+    kind = 'step';
+    step_n = CAST(1 AS UNSIGNED);
+  ELSE
+    RETURN CREATE_ARRAY(0);
+  END IF;
+  RETURN arr;
+END //
+DELIMITER ;
+`
+
+	// Step 1: mirror helios normalization using delimiter-aware tokenizer.
+	normalizedParts := make([]string, 0)
+	for _, stmt := range TokenizeSingleStore(sqlText).CmdSplitUnstripped() {
+		for len(stmt) > 0 {
+			first := stmt[0].Type
+			if first == DelimiterStatement || first == Comment || first == Whitespace || first == Empty {
+				stmt = stmt[1:]
+				continue
+			}
+			break
+		}
+		for len(stmt) > 0 {
+			last := stmt[len(stmt)-1].Type
+			if last == Delimiter || last == DelimiterStatement || last == Comment || last == Whitespace {
+				stmt = stmt[:len(stmt)-1]
+				continue
+			}
+			break
+		}
+		if len(stmt) == 0 {
+			continue
+		}
+		normalizedParts = append(normalizedParts, stmt.String())
+	}
+	normalizedSQL := strings.Join(normalizedParts, ";\n")
+
+	// Step 2: API tokenization should still yield one statement for this function.
+	apiSplit := TokenizeSingleStoreAPI(normalizedSQL).CmdSplitUnstripped()
+	nonEmpty := make([]Tokens, 0, len(apiSplit))
+	for _, stmt := range apiSplit {
+		if len(stmt.Strip()) > 0 {
+			nonEmpty = append(nonEmpty, stmt)
+		}
+	}
+	if assert.Len(t, nonEmpty, 1) {
+		s := nonEmpty[0].String()
+		assert.Contains(t, s, "DECLARE")
+		assert.Contains(t, s, "step_n INT;")
+		assert.Contains(t, s, "BEGIN")
+		assert.Contains(t, s, "END")
+	}
 }

@@ -429,12 +429,19 @@ func dumpTokens(t *testing.T, prefix string, tokens ...Tokens) {
 		}
 		return fmt.Sprintf(" (%s: %s: %q)", what, tkn.Type, tkn.Text)
 	}
+	debugString := func(debug string) string {
+		if debug != "" {
+			return fmt.Sprintf(" (debug:%q)", debug)
+		}
+		return ""
+	}
 	for i, s := range tokens {
 		t.Logf(" %s-%d: %q", prefix, i, s.String())
 		for j, token := range s {
-			t.Logf("  %s-%d-%d: %s %q%s%s", prefix, i, j, token.Type, token.Text,
+			t.Logf("  %s-%d-%d: %s %q%s%s%s", prefix, i, j, token.Type, token.Text,
 				tokenPointerString("split", token.Split),
-				tokensString("strip", token.Strip...))
+				tokensString("strip", token.Strip...),
+				debugString(token.Debug()))
 		}
 	}
 }
