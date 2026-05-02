@@ -20,72 +20,72 @@ func TestStrip(t *testing.T) {
 			after:  "",
 		},
 		{
-			before: "-- stuff\n",
+			before: "-- stuff1\n",
 			after:  "",
 		},
 		{
-			before: "/* foo */ bar \n baz  ; ",
+			before: "/* foo2 */ bar \n baz  ; ",
 			after:  "bar baz",
 		},
 		{
-			before: " /* foo */ bar \n baz  ; ",
+			before: " /* foo3 */ bar \n baz  ; ",
 			after:  "bar baz",
 		},
 		{
-			before: "\t\talpha  \n\n beta\t ;  ",
-			after:  "alpha beta",
+			before: "\t\talpha4  \n\n beta\t ;  ",
+			after:  "alpha4 beta",
 		},
 		{
-			before: "word/*c1*/\t/*c2*/word2 ; ",
+			before: "word/*c5*/\t/*c6*/word2 ; ",
 			after:  "word word2",
 		},
 		{
-			before: "  -- c1\n  word ; -- c2\n",
+			before: "  -- c7\n  word ; -- c2\n",
 			after:  "word",
 		},
 		{
-			before: "x ; ; ;  ",
-			after:  "x",
+			before: "x8 ; ; ;  ",
+			after:  "x8",
 		},
 		{
-			before: "a;b;c;",
-			after:  "a;b;c",
+			before: "a9;b;c;",
+			after:  "a9;b;c",
 		},
 		{
-			before: ";\n\t ; /* c */ ; -- tail",
+			before: ";\n\t ; /* c10 */ ; -- tail",
 			after:  "",
 		},
 		{
-			before: "  ';--not-comment'  ;  ",
-			after:  "';--not-comment'",
+			before: "  ';--not-comment11'  ;  ",
+			after:  "';--not-comment11'",
 		},
 		{
-			before: "/*a*/\n/*b*/\n",
+			before: "/*a12*/\n/*b*/\n",
 			after:  "",
 		},
 		{
-			before: "a/*x*/;/*y*/b;",
+			before: "a/*x13*/;/*y*/b;",
 			after:  "a;b",
 		},
 		{
-			before: "a\n\t\tb\n c ;",
+			before: "a14\n\t\tb\n c ;",
+			after:  "a14 b c",
+		},
+		{
+			before: "a /* c15 */ /* c2 */ /* c3 */ /* c4 */ /* c5 */ b /* c6 */ /* c7 */ c",
 			after:  "a b c",
 		},
 		{
-			before: "a /* c1 */ /* c2 */ /* c3 */ /* c4 */ /* c5 */ b /* c6 */ /* c7 */ c",
-			after:  "a b c",
+			before: "word16 /* comment */ \t \n   word17",
+			after:  "word16 word17",
 		},
 		{
-			before: "word1 /* comment */ \t \n   word2",
-			after:  "word1 word2",
+			before: "SELECT 18 $$",
+			after:  "SELECT 18 $$",
 		},
 		{
-			before: "SELECT 1 $$",
-			after:  "SELECT 1 $$",
-		},
-		{
-			before: "DELIMITER $$\nSELECT 1$$\nDELIMITER ;\n",
-			after:  "DELIMITER $$\nSELECT 1$$\nDELIMITER ;\n",
+			before: "DELIMITER $$\nSELECT 19$$\nDELIMITER ;\n",
+			after:  "DELIMITER $$\nSELECT 19$$\nDELIMITER ;\n",
 		},
 		{
 			before: "DELIMITER $$\nDELIMITER ;\n",
@@ -155,93 +155,93 @@ func TestCmdSplit(t *testing.T) {
 		},
 		{
 			name:        "comment_only",
-			input:       "-- stuff\n",
-			notStripped: []string{"-- stuff\n"},
+			input:       "-- stuff100\n",
+			notStripped: []string{"-- stuff100\n"},
 			stripped:    []string{},
 		},
 		{
 			name:         "two-commands",
-			input:        "select 1;\nselect 2;\n",
-			notStripped:  []string{"select 1", "\nselect 2", "\n"},
-			stripped:     []string{"select 1", "select 2"},
-			joinStripped: "select 1;select 2;",
+			input:        "select 101;\nselect 2;\n",
+			notStripped:  []string{"select 101", "\nselect 2", "\n"},
+			stripped:     []string{"select 101", "select 2"},
+			joinStripped: "select 101;select 2;",
 		},
 		{
 			name:            "extra_semicolons_preserved_or_not",
-			input:           "SELECT 1;;SELECT 2;;;",
-			notStripped:     []string{"SELECT 1", "SELECT 2"},
-			stripped:        []string{"SELECT 1", "SELECT 2"},
-			joinNotStripped: "SELECT 1;SELECT 2;",
-			joinStripped:    "SELECT 1;SELECT 2;",
+			input:           "SELECT 102;;SELECT 2;;;",
+			notStripped:     []string{"SELECT 102", "SELECT 2"},
+			stripped:        []string{"SELECT 102", "SELECT 2"},
+			joinNotStripped: "SELECT 102;SELECT 2;",
+			joinStripped:    "SELECT 102;SELECT 2;",
 		},
 		{
 			name:            "semicolons_inside_literal_and_comment",
-			input:           "SELECT ';';/*x;*/SELECT 2;",
-			notStripped:     []string{"SELECT ';'", "/*x;*/SELECT 2"},
+			input:           "SELECT ';';/*x103;*/SELECT 2;",
+			notStripped:     []string{"SELECT ';'", "/*x103;*/SELECT 2"},
 			stripped:        []string{"SELECT ';'", "SELECT 2"},
-			joinNotStripped: "SELECT ';';/*x;*/SELECT 2;",
+			joinNotStripped: "SELECT ';';/*x103;*/SELECT 2;",
 			joinStripped:    "SELECT ';';SELECT 2;",
 		},
 		{
 			name:            "whitespace_only_commands_preserved_unstripped",
-			input:           " ;SELECT 1;  ;SELECT 2; ",
-			notStripped:     []string{" ", "SELECT 1", "  ", "SELECT 2", " "},
-			stripped:        []string{"SELECT 1", "SELECT 2"},
-			joinNotStripped: " ;SELECT 1;  ;SELECT 2; ",
-			joinStripped:    "SELECT 1;SELECT 2;",
+			input:           " ;SELECT 104;  ;SELECT 2; ",
+			notStripped:     []string{" ", "SELECT 104", "  ", "SELECT 2", " "},
+			stripped:        []string{"SELECT 104", "SELECT 2"},
+			joinNotStripped: " ;SELECT 104;  ;SELECT 2; ",
+			joinStripped:    "SELECT 104;SELECT 2;",
 		},
 		{
 			name:            "delimiter_text_inside_literal_not_split",
-			input:           "DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\nSELECT 2;\n",
-			notStripped:     []string{"DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\n", "SELECT 2", "\n"},
-			stripped:        []string{"DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\n", "SELECT 2"},
-			joinNotStripped: "DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\nSELECT 2;\n",
-			joinStripped:    "DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\nSELECT 2;",
+			input:           "DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\nSELECT 105;\n",
+			notStripped:     []string{"DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\n", "SELECT 105", "\n"},
+			stripped:        []string{"DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\n", "SELECT 105"},
+			joinNotStripped: "DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\nSELECT 105;\n",
+			joinStripped:    "DELIMITER $$\nSELECT '$$';$$\nDELIMITER ;\nSELECT 105;",
 		},
 		{
 			name:            "leading_and_trailing_semicolon_runs",
-			input:           ";;;SELECT 1;SELECT 2;;;",
-			notStripped:     []string{"SELECT 1", "SELECT 2"},
-			stripped:        []string{"SELECT 1", "SELECT 2"},
-			joinNotStripped: "SELECT 1;SELECT 2;",
-			joinStripped:    "SELECT 1;SELECT 2;",
+			input:           ";;;SELECT 106;SELECT 2;;;",
+			notStripped:     []string{"SELECT 106", "SELECT 2"},
+			stripped:        []string{"SELECT 106", "SELECT 2"},
+			joinNotStripped: "SELECT 106;SELECT 2;",
+			joinStripped:    "SELECT 106;SELECT 2;",
 		},
 		{
 			name:         "command_with_comment",
-			input:        " /* foo1 */ bat \n baz  ; ",
-			notStripped:  []string{" /* foo1 */ bat \n baz  ", " "},
+			input:        " /* foo107 */ bat \n baz  ; ",
+			notStripped:  []string{" /* foo107 */ bat \n baz  ", " "},
 			stripped:     []string{"bat baz"},
 			joinStripped: "bat baz;",
 		},
 		{
 			name:         "commands_with_comment",
-			input:        " /* foo2 */ bar \n ;baz  ; ",
-			notStripped:  []string{" /* foo2 */ bar \n ", "baz  ", " "},
+			input:        " /* foo108 */ bar \n ;baz  ; ",
+			notStripped:  []string{" /* foo108 */ bar \n ", "baz  ", " "},
 			stripped:     []string{"bar", "baz"},
 			joinStripped: "bar;baz;",
 		},
 		{
 			name:            "two_delimited_commands",
-			input:           "DELIMITER $$\nSELECT 1; $$\nSELECT 2$$\n",
-			notStripped:     []string{"DELIMITER $$\nSELECT 1; $$\nDELIMITER ;\n", "DELIMITER $$\n\nSELECT 2$$\nDELIMITER ;\n", "\n"},
-			stripped:        []string{"DELIMITER $$\nSELECT 1; $$\nDELIMITER ;\n", "DELIMITER $$\nSELECT 2$$\nDELIMITER ;\n"},
-			joinNotStripped: "DELIMITER $$\nSELECT 1; $$\nSELECT 2$$\n\nDELIMITER ;\n\n",
-			joinStripped:    "DELIMITER $$\nSELECT 1; $$SELECT 2$$\nDELIMITER ;\n",
+			input:           "DELIMITER $$\nSELECT 109; $$\nSELECT 2$$\n",
+			notStripped:     []string{"DELIMITER $$\nSELECT 109; $$\nDELIMITER ;\n", "DELIMITER $$\n\nSELECT 2$$\nDELIMITER ;\n", "\n"},
+			stripped:        []string{"DELIMITER $$\nSELECT 109; $$\nDELIMITER ;\n", "DELIMITER $$\nSELECT 2$$\nDELIMITER ;\n"},
+			joinNotStripped: "DELIMITER $$\nSELECT 109; $$\nSELECT 2$$\n\nDELIMITER ;\n\n",
+			joinStripped:    "DELIMITER $$\nSELECT 109; $$SELECT 2$$\nDELIMITER ;\n",
 		},
 		{
 			name:            "delimited_then_not_delimited1",
-			input:           "DELIMITER //\nCREATE PROCEDURE p()\nBEGIN;\nSELECT 1;\nEND//\nDELIMITER ;\nSELECT 2;\n",
-			stripped:        []string{"DELIMITER //\nCREATE PROCEDURE p() BEGIN; SELECT 1; END//\nDELIMITER ;\n", "SELECT 2"},
-			notStripped:     []string{"DELIMITER //\nCREATE PROCEDURE p()\nBEGIN;\nSELECT 1;\nEND//\nDELIMITER ;\n", "SELECT 2", "\n"},
-			joinNotStripped: "DELIMITER //\nCREATE PROCEDURE p()\nBEGIN;\nSELECT 1;\nEND//\nDELIMITER ;\nSELECT 2;\n",
-			joinStripped:    "DELIMITER //\nCREATE PROCEDURE p() BEGIN; SELECT 1; END//\nDELIMITER ;\nSELECT 2;",
+			input:           "DELIMITER //\nCREATE PROCEDURE p()\nBEGIN;\nSELECT 110;\nEND//\nDELIMITER ;\nSELECT 2;\n",
+			stripped:        []string{"DELIMITER //\nCREATE PROCEDURE p() BEGIN; SELECT 110; END//\nDELIMITER ;\n", "SELECT 2"},
+			notStripped:     []string{"DELIMITER //\nCREATE PROCEDURE p()\nBEGIN;\nSELECT 110;\nEND//\nDELIMITER ;\n", "SELECT 2", "\n"},
+			joinNotStripped: "DELIMITER //\nCREATE PROCEDURE p()\nBEGIN;\nSELECT 110;\nEND//\nDELIMITER ;\nSELECT 2;\n",
+			joinStripped:    "DELIMITER //\nCREATE PROCEDURE p() BEGIN; SELECT 110; END//\nDELIMITER ;\nSELECT 2;",
 		},
 		{
 			name:         "delimited_then_not_delimited2",
-			input:        "DELIMITER //\nCREATE PROCEDURE p()\nBEGIN;\nSELECT 1;\nEND//\nDELIMITER ;\nSELECT 2;\n",
-			stripped:     []string{"DELIMITER //\nCREATE PROCEDURE p() BEGIN; SELECT 1; END//\nDELIMITER ;\n", "SELECT 2"},
-			notStripped:  []string{"DELIMITER //\nCREATE PROCEDURE p()\nBEGIN;\nSELECT 1;\nEND//\nDELIMITER ;\n", "SELECT 2", "\n"},
-			joinStripped: "DELIMITER //\nCREATE PROCEDURE p() BEGIN; SELECT 1; END//\nDELIMITER ;\nSELECT 2;",
+			input:        "DELIMITER //\nCREATE PROCEDURE p()\nBEGIN;\nSELECT 111;\nEND//\nDELIMITER ;\nSELECT 2;\n",
+			stripped:     []string{"DELIMITER //\nCREATE PROCEDURE p() BEGIN; SELECT 111; END//\nDELIMITER ;\n", "SELECT 2"},
+			notStripped:  []string{"DELIMITER //\nCREATE PROCEDURE p()\nBEGIN;\nSELECT 111;\nEND//\nDELIMITER ;\n", "SELECT 2", "\n"},
+			joinStripped: "DELIMITER //\nCREATE PROCEDURE p() BEGIN; SELECT 111; END//\nDELIMITER ;\nSELECT 2;",
 		},
 		{
 			name:         "delimited_then_not_delimited3",
@@ -286,11 +286,12 @@ func TestCmdSplit(t *testing.T) {
 			joinStripped: "DELIMITER $$\nSELECT 1$$\nDELIMITER ;\nSELECT 2;",
 		},
 		{
-			name:         "delimiter_command_without_newline_not_activated",
-			input:        "DELIMITER $$ SELECT 1;",
-			stripped:     []string{"DELIMITER $$ SELECT 1"},
-			notStripped:  []string{"DELIMITER $$ SELECT 1"},
-			joinStripped: "DELIMITER $$ SELECT 1;",
+			name:            "delimiter_command_without_newline_activated",
+			input:           "DELIMITER $$ SELECT 1;",
+			stripped:        []string{"DELIMITER $$ SELECT 1;\nDELIMITER ;\n"},
+			notStripped:     []string{"DELIMITER $$ SELECT 1;\nDELIMITER ;\n"},
+			joinStripped:    "DELIMITER $$ SELECT 1;\nDELIMITER ;\n",
+			joinNotStripped: "DELIMITER $$ SELECT 1;\nDELIMITER ;\n",
 		},
 		{
 			name:  "join_notices_delimiter_changes_ignoring_whitespace_only_segments",
@@ -346,6 +347,7 @@ func TestCmdSplit(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Log(tc.name)
 			ts := TokenizeMySQL(tc.input)
 			tsCopy := ts.Copy()
 			t.Logf("input: %q", tc.input)
@@ -372,9 +374,11 @@ func TestCmdSplit(t *testing.T) {
 			require.Equal(t, tc.stripped, stripped.Strings(), "stripped commands")
 			if tc.joinNotStripped == "" && len(tc.notStripped) != 0 {
 				tc.joinNotStripped = tc.input
+				t.Logf("joinNotStripped not set, using %q", tc.input)
 			}
 			if tc.joinStripped == "" && len(tc.stripped) != 0 {
 				tc.joinStripped = ts.Strip().String()
+				t.Logf("joinStripped not set, using %q", tc.joinStripped)
 			}
 			notStrippedJoin := notStripped.Join()
 			if !assert.Equal(t, notStrippedCopy, notStripped, "notStripped changed") {
