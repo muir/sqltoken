@@ -387,6 +387,11 @@ var commonCases = []Tokens{
 		{Type: Whitespace, Text: " "},
 		{Type: Word, Text: "z"},
 	},
+	// delimiter at EOF
+	{
+		{Type: Word, Text: "c55"},
+		{Type: Delimiter, Text: ";"},
+	},
 }
 
 var commonMySQLS2Cases = []Tokens{
@@ -1319,6 +1324,18 @@ var sqliteCases = []Tokens{
 		{Type: DollarNumber, Text: "$456"},
 		{Type: Whitespace, Text: " "},
 	},
+	// numbered ?N at EOF
+	{
+		{Type: Word, Text: "select"},
+		{Type: Whitespace, Text: " "},
+		{Type: QuestionMark, Text: "?123"},
+	},
+	// @word at EOF
+	{
+		{Type: Word, Text: "select"},
+		{Type: Whitespace, Text: " "},
+		{Type: AtWord, Text: "@foo"},
+	},
 }
 
 var oracleCases = []Tokens{
@@ -1578,6 +1595,12 @@ var sqlServerCases = []Tokens{
 		{Type: Word, Text: "s19"},
 		{Type: Whitespace, Text: " "},
 		{Type: Punctuation, Text: "@"},
+	},
+	// @word at EOF
+	{
+		{Type: Word, Text: "s20"},
+		{Type: Whitespace, Text: " "},
+		{Type: AtWord, Text: "@foo"},
 	},
 }
 
