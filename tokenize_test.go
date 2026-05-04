@@ -956,6 +956,42 @@ var commonMySQLS2Cases = []Tokens{
 		{Type: Comment, Text: "-- 64 DELIMITER with trailing ignored text at EOF\n"},
 		{Type: DelimiterStatement, Text: "DELIMITER $$ extra"},
 	},
+	{
+		{Type: Comment, Text: "-- 65 DELIMITER with double-quoted value at EOF\n"},
+		{Type: DelimiterStatement, Text: `DELIMITER "$$"`},
+	},
+	{
+		{Type: Comment, Text: "-- 66 DELIMITER with empty single-quoted value at EOF\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER ''"},
+	},
+	{
+		{Type: Comment, Text: "-- 67 DELIMITER with empty double-quoted value at EOF\n"},
+		{Type: DelimiterStatement, Text: `DELIMITER ""`},
+	},
+	{
+		{Type: Comment, Text: "-- 68 DELIMITER with single-quoted value and trailing whitespace at EOF\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER '$$'   "},
+	},
+	{
+		{Type: Comment, Text: "-- 69 DELIMITER with single-quoted value and trailing ignored text at EOF\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER '$$' extra"},
+	},
+	{
+		{Type: Comment, Text: "-- 70 DELIMITER with double-quoted value and trailing ignored text at EOF\n"},
+		{Type: DelimiterStatement, Text: `DELIMITER "$$" extra`},
+	},
+	{
+		{Type: Comment, Text: "-- 71 DELIMITER with unterminated single-quoted value at EOF\n"},
+		{Type: Word, Text: "DELIMITER"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: "'$$"},
+	},
+	{
+		{Type: Comment, Text: "-- 72 DELIMITER with unterminated double-quoted value at EOF\n"},
+		{Type: Word, Text: "DELIMITER"},
+		{Type: Whitespace, Text: " "},
+		{Type: Literal, Text: `"$$`},
+	},
 }
 
 var mySQLCases = []Tokens{
