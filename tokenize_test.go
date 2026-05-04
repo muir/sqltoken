@@ -931,10 +931,30 @@ var commonMySQLS2Cases = []Tokens{
 		{Type: Punctuation, Text: ","},
 		{Type: Whitespace, Text: " "},
 		{Type: QuestionMark, Text: "?"},
-		{Type: Number, Text: "1"},
+		{Type: Number, Text: "60"},
 		{Type: Punctuation, Text: ","},
 		{Type: Whitespace, Text: " "},
 		{Type: QuestionMark, Text: "?"},
+	},
+	{
+		{Type: Comment, Text: "-- 60 DELIMITER with unquoted value at EOF\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER ;"},
+	},
+	{
+		{Type: Comment, Text: "-- 61 DELIMITER with custom value at EOF\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER $$"},
+	},
+	{
+		{Type: Comment, Text: "-- 62 DELIMITER with quoted value at EOF\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER '$$'"},
+	},
+	{
+		{Type: Comment, Text: "-- 63 DELIMITER with trailing ignored text before EOF\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER $$ extra\n"},
+	},
+	{
+		{Type: Comment, Text: "-- 64 DELIMITER with trailing ignored text at EOF\n"},
+		{Type: DelimiterStatement, Text: "DELIMITER $$ extra"},
 	},
 }
 

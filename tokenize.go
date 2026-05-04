@@ -847,6 +847,7 @@ DelimiterContinues:
 			goto DelimiterIgnoring
 		}
 	}
+	goto DelimiterFound
 
 DelimiterSingleQuote:
 	{
@@ -947,7 +948,8 @@ DelimiterUnquoted:
 				i++
 			}
 		}
-		goto NotDelimiter
+		delimiterBuffer = s[delimiterStart:i]
+		goto DelimiterFound
 	}
 
 DelimiterIgnoring:
@@ -958,11 +960,13 @@ DelimiterIgnoring:
 			case '\n':
 				i++
 				goto DelimiterFound
+			case ' ', '\t', '\r', '\b', '\v', '\f':
+				i++
 			default:
 				i++
 			}
 		}
-		goto NotDelimiter
+		goto DelimiterFound
 	}
 
 DelimiterFound:
